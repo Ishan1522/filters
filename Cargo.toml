@@ -4,11 +4,18 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-eframe       = "0.27"       # egui windowing
-egui         = "0.27"       # immediate mode GUI
-egui_plot    = "0.27"       # signal + spectrum plots
+eframe       = "0.29"       # egui windowing
+egui         = "0.29"       # immediate mode GUI
+egui_plot    = "0.29"       # signal + spectrum plots
 egui_node_graph2 = "0.7"
-rustfft      = "6"          # FFT for spectrum analyzer
+rustfft      = "6.2"          # FFT for spectrum analyzer
 nalgebra     = "0.32"       # matrix math for filter design
 rmp-serde    = "1"          # MessagePack for NT4
 tokio        = { version = "1", features = ["full"] } # async NT4
+slotmap = "1.0"
+tungstenite = "0.24"
+url = "2.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rmpv = "1.3"
+crossbeam-channel = "0.5"

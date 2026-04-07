@@ -1,4 +1,9 @@
 pub mod app;
 pub mod export;
+pub mod filter_panel;
+pub mod filter_response;
+pub mod live_panel;
 pub mod node_graph;
+pub mod node_inspector;
+pub mod node_palette;
 pub mod signal_view;
