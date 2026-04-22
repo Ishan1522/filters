@@ -245,19 +245,25 @@ mod tests {
 
     #[test]
     fn biquad_process_block_matches_process() {
-        let mut bq = Biquad::new(0.5, 0.25, 0.125, -0.3, 0.4);
+        let coefs = Biquad::new(0.5, 0.25, 0.125, -0.3, 0.4);
         let input = [1.0, 0.5, -0.5, 0.25];
-        let mut output_block = [0.0; 4];
-        bq.process_block(&input, &mut output_block);
 
-        // Compare to sequential processing.
-        let mut bq2 = bq; // copy with same coefficients but fresh state
+        let mut bq_block = coefs;
+        let mut output_block = [0.0; 4];
+        bq_block.process_block(&input, &mut output_block);
+
+        let mut bq_seq = coefs;
         let mut output_seq = [0.0; 4];
         for (i, &x) in input.iter().enumerate() {
-            output_seq[i] = bq2.process(x);
+            output_seq[i] = bq_seq.process(x);
         }
 
-        assert_eq!(output_block, output_seq);
+        for i in 0..4 {
+            assert!((output_block[i] - output_seq[i]).abs() < 1e-15,
+                    "idx {}: block={}, seq={}", i, output_block[i], output_seq[i]);
+        }
+        assert!((bq_block.z1 - bq_seq.z1).abs() < 1e-15);
+        assert!((bq_block.z2 - bq_seq.z2).abs() < 1e-15);
     }
 
     #[test]
