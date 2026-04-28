@@ -27,7 +27,7 @@ impl Biquad {
         Self { b0, b1, b2, a1, a2, z1: 0.0, z2: 0.0 }
     }
 
-    /// A passthrough biquad — useful as a placeholder in the pipeline UI.
+    /// A passthrough biquad.
     pub fn identity() -> Self {
         Self::new(1.0, 0.0, 0.0, 0.0, 0.0)
     }
@@ -106,6 +106,13 @@ impl Biquad {
 #[derive(Debug, Clone, Copy)]
 pub struct Complex { pub re: f64, pub im: f64 }
 
+/// Roots of the quadratic a·z² + b·z + c = 0 via the standard formula.
+///
+/// Returns a conjugate pair `(r1, r2)` where:
+/// - real roots if discriminant ≥ 0
+/// - complex conjugates if discriminant < 0
+///
+/// If `a ≈ 0` (degenerate), returns `(0+0i, 0+0i)`.
 fn quadratic_roots(a: f64, b: f64, c: f64) -> (Complex, Complex) {
     if a.abs() < 1e-18 {
         // degenerate — only one "root", duplicated at origin
