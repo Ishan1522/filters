@@ -262,14 +262,34 @@ fn subscribe_one(
         topic_type,
         cfg.topic.as_str().qos(QOS_PROFILE_SENSOR_DATA),
         move |msg: DynamicMessage, info: MessageInfo| {
-            if let Some(v) = extract_path(&msg, &path) {
-                store.push(entry_id, timestamp_us(&info), v);
+            match extract_path(&msg, &path) {
+                Some(v) => store.push(entry_id, timestamp_us(&info), v),
+                // Keep a low-volume diagnostic: if messages arrive but the
+                // field path can't be resolved, that is a config bug worth
+                // surfacing (first occurrence + then every 500th).
+                None => {
+                    let n = RECEIVED_NO_EXTRACT.fetch_add(1, Ordering::Relaxed);
+                    if n == 0 || n % 500 == 0 {
+                        eprintln!(
+                            "live: received msg on {} ({} samples so far) but \
+                             field path '{:?}' did not yield a scalar",
+                            cfg.topic,
+                            store.stats().1,
+                            cfg.path,
+                        );
+                    }
+                }
             }
         },
     )
     .map(|_| ())
     .map_err(|e| e.to_string())
 }
+
+/// Total messages received but not extractable (across all subscriptions) —
+/// diagnostics only.
+#[cfg(feature = "ros2")]
+static RECEIVED_NO_EXTRACT: AtomicU64 = AtomicU64::new(0);
 
 /// Walk `path` into `msg` and coerce the terminal value to `f64`.
 #[cfg(feature = "ros2")]
@@ -417,17 +437,33 @@ mod tests {
 
         // Drain status until connected (or a clear error).
         let deadline = Instant::now() + Duration::from_secs(10);
+        let mut last_report = Instant::now();
         loop {
-            if let Ok(s) = client.status_rx.try_recv() {
+            while let Ok(s) = client.status_rx.try_recv() {
                 if let LiveStatus::Error(e) = s {
                     panic!("live client error: {e}");
                 }
             }
-            if client.store.stats().1 > 0 {
+            let (n_topics, n_samples) = client.store.stats();
+            if n_samples > 0 {
                 break;
             }
+            if Instant::now() - last_report >= Duration::from_secs(2) {
+                eprintln!(
+                    "live smoke: t+{}s — topics={n_topics} samples={n_samples} \
+                     received_not_extracted={}",
+                    deadline.elapsed().as_secs(),
+                    RECEIVED_NO_EXTRACT.load(Ordering::Relaxed),
+                );
+                last_report = Instant::now();
+            }
             if Instant::now() > deadline {
-                panic!("no samples received within 10s — is the publisher up?");
+                let not_extracted = RECEIVED_NO_EXTRACT.load(Ordering::Relaxed);
+                panic!(
+                    "no samples received within 10s \
+                     (topics={n_topics}, received_but_not_extracted={not_extracted}) — \
+                     is the publisher up and does the field path match?"
+                );
             }
             std::thread::sleep(Duration::from_millis(200));
         }
