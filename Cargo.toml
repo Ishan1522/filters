@@ -1,21 +1,43 @@
 [package]
 name = "wpifilter"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
+description = "ROS 2 filter workbench — analyze rosbag recordings (MCAP) and live ROS 2 topics, design filters, export them as ROS 2 nodes"
+license = "MIT"
+readme = "README.md"
+
+# ── Feature flags ────────────────────────────────────────────────────────────
+# The core (DSP, pipeline, GUI, rosbag reading) builds with plain `cargo build`.
+# The `ros2` feature additionally builds the live ROS 2 topic client and needs
+# a ROS 2 distro installed and sourced (see README "Live ROS 2 topics").
+[features]
+default = ["rosbag"]
+# Offline rosbag2 reading via the MCAP storage format (pure Rust, no ROS 2).
+rosbag = ["dep:mcap"]
+# Live ROS 2 topics via rclrs (official ros2-rust client library), using
+# dynamic messages (runtime introspection) so no generated message crates are
+# needed. Requires a ROS 2 distro installed and sourced. See README.
+ros2 = ["dep:rclrs"]
 
 [dependencies]
-eframe       = "0.29"       # egui windowing
-egui         = "0.29"       # immediate mode GUI
-egui_plot    = "0.29"       # signal + spectrum plots
-egui_node_graph2 = "0.7"
-rustfft      = "6.2"          # FFT for spectrum analyzer
-nalgebra     = "0.32"       # matrix math for filter design
-rmp-serde    = "1"          # MessagePack for NT4
-tokio        = { version = "1", features = ["full"] } # async NT4
-slotmap = "1.0"
-tungstenite = "0.24"
-url = "2.5"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-rmpv = "1.3"
+# GUI
+eframe       = "0.29"      # egui windowing
+egui         = "0.29"      # immediate mode GUI
+egui_plot    = "0.29"      # signal + spectrum plots
+slotmap      = "1.0"       # node-graph node ids
+
+# DSP / analysis
+rustfft      = "6.2"       # FFT for spectrum analyzer
+nalgebra     = "0.32"      # matrix math for filter design
+
+# Offline rosbag2 (MCAP storage format) — default feature
+mcap         = { version = "0.25", optional = true }
+
+# Live ROS 2 topics — `ros2` feature. rclrs is published on crates.io; it
+# links against the system ROS 2 libraries (a distro must be installed and
+# sourced). Subscriptions are dynamic (runtime message introspection), so no
+# generated message crates are required.
+rclrs        = { version = "0.7", optional = true }
+
+# Cross-thread communication (live client thread ↔ UI thread)
 crossbeam-channel = "0.5"
