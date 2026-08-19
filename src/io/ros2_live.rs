@@ -670,4 +670,51 @@ mod tests {
         eprintln!("dynamic in-process: received {n} messages");
         assert!(n > 0, "dynamic subscription received nothing on /ci/vel");
     }
+
+    /// A/B control: same in-process dynamic logic but on a SPAWNED thread,
+    /// mirroring how Ros2LiveClient runs its executor. Distinguishes
+    /// "rclrs executor on a non-main thread" from everything else.
+    #[cfg(feature = "ros2")]
+    #[test]
+    #[ignore = "requires a live ROS 2 node + publisher; run by CI"]
+    fn live_dynamic_thread_smoke() {
+        use rclrs::{Context, InitOptions};
+        use std::sync::atomic::AtomicUsize;
+        use std::time::Duration;
+
+        let count = Arc::new(AtomicUsize::new(0));
+        let count_clone = Arc::clone(&count);
+        let count2 = Arc::clone(&count);
+
+        std::thread::spawn(move || {
+            let context = Context::from_env(InitOptions::new().with_domain_id(Some(0)))
+                .expect("context");
+            let mut executor = context.create_basic_executor();
+            let node = executor.create_node("rosfilter_dynamic_thread").expect("node");
+            let worker = node.create_worker(());
+            let topic_type =
+                MessageTypeName::try_from("std_msgs/msg/Float64").expect("valid message type");
+            let _sub = worker
+                .create_dynamic_subscription(
+                    topic_type,
+                    "/ci/vel",
+                    move |_payload: &mut (), _msg: DynamicMessage, _info: MessageInfo| {
+                        count_clone.fetch_add(1, Ordering::Relaxed);
+                    },
+                )
+                .expect("dynamic subscription");
+
+            let errors = executor.spin(SpinOptions::default().timeout(Duration::from_secs(6)));
+            eprintln!(
+                "dynamic thread spin errors: {:?} (timeout expected)",
+                errors.iter().map(|e| e.to_string()).collect::<Vec<_>>()
+            );
+        })
+        .join()
+        .expect("spin thread panicked");
+
+        let n = count2.load(Ordering::Relaxed);
+        eprintln!("dynamic thread: received {n} messages");
+        assert!(n > 0, "threaded dynamic subscription received nothing on /ci/vel");
+    }
 }
