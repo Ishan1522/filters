@@ -68,20 +68,12 @@ impl FilterPanel {
             ui.small("Smaller ripple → closer to Butterworth.");
         }
 
-        if spec.kind.uses_ripple() {
-    ui.add(
-        egui::Slider::new(&mut spec.ripple_db, 0.1..=6.0)
-            .text("Passband ripple (dB)"),
-    );
-    ui.small("Smaller ripple → closer to Butterworth.");
-}
+        ui.separator();
+        ui.checkbox(&mut spec.zero_phase, "Zero-phase (filtfilt)");
+        ui.small("Offline analysis only. Doubles effective order, cancels phase lag.");
+        ui.small("Not exported — ROS 2 filter nodes are always causal single-pass.");
 
-ui.separator();
-ui.checkbox(&mut spec.zero_phase, "Zero-phase (filtfilt)");
-ui.small("Offline analysis only. Doubles effective order, cancels phase lag.");
-ui.small("Not exported — robot code is always causal single-pass.");
-
-ui.separator();
-ui.button("Export…").clicked()
+        ui.separator();
+        ui.button("Export…").clicked()
     }
 }
