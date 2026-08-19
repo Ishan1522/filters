@@ -520,7 +520,7 @@ mod tests {
     }
 
     #[cfg(feature = "ros2")]
-    impl rosidl_runtime_rs::traits::Message for CiFloat64 {
+    impl rclrs::rosidl_runtime_rs::traits::Message for CiFloat64 {
         type RmwMsg = CiFloat64;
 
         fn into_rmw_message(
@@ -534,14 +534,24 @@ mod tests {
         }
     }
 
+    /// Raw type-support pointers are not Send/Sync; the generated message
+    /// crates hide this behind their static tables — here we mark the
+    /// (process-lifetime, immutable) pointer as shareable.
     #[cfg(feature = "ros2")]
-    impl rosidl_runtime_rs::traits::RmwMessage for CiFloat64 {
+    struct TypeSupportPtr(*const std::ffi::c_void);
+    #[cfg(feature = "ros2")]
+    unsafe impl Send for TypeSupportPtr {}
+    #[cfg(feature = "ros2")]
+    unsafe impl Sync for TypeSupportPtr {}
+
+    #[cfg(feature = "ros2")]
+    impl rclrs::rosidl_runtime_rs::traits::RmwMessage for CiFloat64 {
         const TYPE_NAME: &'static str = "std_msgs/msg/Float64";
 
         fn get_type_support() -> *const std::ffi::c_void {
             use std::sync::OnceLock;
-            static TS: OnceLock<*const std::ffi::c_void> = OnceLock::new();
-            *TS.get_or_init(|| {
+            static TS: OnceLock<TypeSupportPtr> = OnceLock::new();
+            TS.get_or_init(|| {
                 let prefix = std::env::var("AMENT_PREFIX_PATH")
                     .map(|p| p.split(':').next().unwrap_or("/opt/ros/jazzy").to_string())
                     .unwrap_or_else(|_| "/opt/ros/jazzy".to_string());
@@ -565,8 +575,9 @@ mod tests {
                 let ptr = unsafe { getter() };
                 // Keep the library loaded for the process lifetime.
                 std::mem::forget(lib);
-                ptr
+                TypeSupportPtr(ptr)
             })
+            .0
         }
     }
 
