@@ -1,0 +1,177 @@
+# ROS 2 verification CI for rosfilter.
+#
+# The local dev box has no ROS 2, so the rclrs live code and the MCAP loader
+# are verified here against a REAL ROS 2 Jazzy installation (Ubuntu 24.04):
+#
+#   Job A "core" — plain `cargo build` + `cargo test` (default features, no
+#                  ROS 2 needed; includes the MCAP write→read round-trip).
+#   Job B "ros2"  — the critical one: `cargo build --features ros2` compiles
+#                  src/io/ros2_live.rs against real rclrs 0.7, a REAL
+#                  `ros2 bag record` output is loaded by rosbag_loader.rs,
+#                  and a live rclrs subscription receives real published data.
+#
+# Canonical target (see README): ROS 2 Jazzy Jalisco on Ubuntu 24.04.
+# rclrs 0.7 is taken from crates.io (Jazzy bindings are pre-generated and
+# shipped in the crate); apt provides the ROS libraries + the rclrs build
+# workaround packages (ros2-rust issue #557).
+
+name: ros2
+
+on:
+  pull_request:
+  push:
+    branches: [feat/ros2-migration]
+  workflow_dispatch:
+
+concurrency:
+  group: ros2-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: core (cargo build + test, no ROS)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo build (default features)
+        run: cargo build --locked
+      - name: cargo test (default features)
+        run: cargo test --locked
+
+  ros2:
+    name: ros2 (Jazzy build + real-bag + live smoke)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      # Restrict DDS to loopback so the in-CI publisher↔subscriber pair
+      # discovers each other reliably.
+      ROS_LOCALHOST_ONLY: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── ROS 2 Jazzy (bare runner + apt: matches the README's documented
+      #    setup exactly and lets us install the exact extra packages) ──
+      # apt against packages.ros.org can stall transiently (observed: a 55
+      # min hang), so bound every apt invocation and retry the install.
+      - name: Install ROS 2 Jazzy (ros-base + rclrs/dynamic-message deps)
+        run: |
+          set -eo pipefail
+          apt_retry() {
+            for attempt in 1 2 3; do
+              if timeout 420 "$@"; then return 0; fi
+              echo "apt command failed (attempt $attempt), retrying…"
+              sleep 15
+            done
+            echo "::error::apt command failed after 3 attempts: $*"
+            return 1
+          }
+          # Add the ROS 2 apt repository (packages.ros.org).
+          apt_retry sudo apt-get install -y software-properties-common curl
+          apt_retry sudo add-apt-repository universe -y
+          apt_retry sudo apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=120 update
+          sudo curl -sSL --retry 5 --retry-delay 5 \
+            https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+            -o /usr/share/keyrings/ros-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
+            http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" \
+            | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+          apt_retry sudo apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=120 update
+          apt_retry sudo apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=120 install -y \
+            ros-jazzy-ros-base \
+            ros-jazzy-rosbag2-storage-mcap \
+            ros-jazzy-rosidl-dynamic-typesupport \
+            ros-jazzy-example-interfaces \
+            ros-jazzy-test-msgs
+
+      - name: Verify message typesupport libraries
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          echo "ROS_DISTRO=$ROS_DISTRO"
+          echo "--- dpkg: rosidl-dynamic-typesupport ---"
+          dpkg -l | grep -i "rosidl-dynamic-typesupport" || echo "NOT INSTALLED"
+          echo "--- introspection typesupport libs (what rclrs dynamic messages dlopen) ---"
+          ls -la /opt/ros/jazzy/lib/libstd_msgs__rosidl_typesupport_introspection_c.so \
+                 /opt/ros/jazzy/lib/libsensor_msgs__rosidl_typesupport_introspection_c.so \
+                 /opt/ros/jazzy/lib/libgeometry_msgs__rosidl_typesupport_introspection_c.so
+          echo "--- ros2 pkg list (dynamic) ---"
+          ros2 pkg list | grep -i dynamic || echo "(no dynamic-named packages)"
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # ── THE critical verification: ros2_live.rs against real rclrs 0.7 ──
+      - name: cargo build --features ros2 (rclrs compile check)
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          cargo build --locked --features ros2
+
+      - name: cargo test --features ros2 (unit tests incl. rclrs paths)
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          cargo test --locked --features ros2
+
+      # ── Real-bag smoke test: record with real ros2 tooling, load it ──
+      - name: Publish fixture topics + record a real rosbag2 (MCAP)
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          # Self-contained: the publisher only needs to live for this step
+          # (GitHub Actions reaps background processes between steps).
+          nohup python3 ci/publish_fixture.py > /tmp/fixture_pub.log 2>&1 &
+          PUB_PID=$!
+          cleanup() { kill "$PUB_PID" 2>/dev/null || true; }
+          trap cleanup EXIT
+          # Let DDS discovery settle before recording.
+          sleep 3
+          timeout -k 2 8 ros2 bag record --storage mcap -o /tmp/test_bag \
+            /ci/vel /ci/imu /ci/twist || echo "record ended (exit $?)"
+          sleep 1
+          BAG_FILE=$(find /tmp/test_bag -name '*.mcap' | head -1)
+          echo "BAG_FILE=$BAG_FILE"
+          if [ -z "$BAG_FILE" ]; then
+            echo "::error::no .mcap produced by ros2 bag record"
+            exit 1
+          fi
+          ls -la "$BAG_FILE"
+          echo "publisher log tail:"
+          tail -5 /tmp/fixture_pub.log || true
+
+      - name: Smoke test — load the real bag through rosbag_loader
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          BAG_FILE=$(find /tmp/test_bag -name '*.mcap' | head -1)
+          ROSFILTER_TEST_BAG="$BAG_FILE" \
+            cargo test --locked --features ros2 real_bag_loads_in_ci -- --ignored
+
+      # ── Live smoke test: rclrs subscription receives real published data ──
+      - name: Smoke test — live rclrs subscription receives data
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          # Self-contained publisher (see note above about step reaping).
+          nohup python3 ci/publish_fixture.py > /tmp/fixture_live_pub.log 2>&1 &
+          PUB_PID=$!
+          cleanup() { kill "$PUB_PID" 2>/dev/null || true; }
+          trap cleanup EXIT
+          sleep 3   # let DDS discovery settle before the subscriber connects
+          # Prove the fixture data is actually on the wire before blaming rclrs.
+          echo "--- ros2 topic list ---"
+          timeout 10 ros2 topic list
+          echo "--- ros2 topic echo /ci/vel (first message) ---"
+          timeout 10 ros2 topic echo /ci/vel --once || echo "(topic echo failed)"
+          TEST_RC=0
+          cargo test --locked --features ros2 live_smoke_receives_data -- --ignored || TEST_RC=$?
+          echo "--- typed A/B: rclrs typed subscription on /ci/vel ---"
+          cargo test --locked --features ros2 live_typed_smoke_receives_data -- --ignored || TEST_RC=$?
+          echo "--- dynamic in-process A/B (same shape as typed, no client) ---"
+          cargo test --locked --features ros2 live_dynamic_inprocess_smoke -- --ignored || TEST_RC=$?
+          echo "--- dynamic thread A/B (in-process logic on a spawned thread) ---"
+          cargo test --locked --features ros2 live_dynamic_thread_smoke -- --ignored || TEST_RC=$?
+          echo "--- fixture publisher log tail ---"
+          tail -20 /tmp/fixture_live_pub.log || true
+          exit $TEST_RC
+        env:
+          ROS_LOCALHOST_ONLY: "1"

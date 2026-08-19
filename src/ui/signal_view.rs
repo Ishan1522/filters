@@ -5,7 +5,8 @@ use egui_plot::{Legend, Line, Plot, PlotPoints, VLine};
 
 use crate::analysis::{self, fft};
 use crate::dsp::spec::FilterSpec;
-use crate::io::log_loader::{LogFile, SampleValue};
+use crate::io::convert::{is_plottable, sample_to_f64};
+use crate::io::model::LogFile;
 use crate::ui::filter_response::FilterResponseView;
 
 #[derive(Default, PartialEq, Eq)]
@@ -73,7 +74,7 @@ impl SignalView {
     }
 
     fn channel_list(&mut self, ui: &mut egui::Ui, log: &LogFile) {
-        ui.heading("Channels");
+        ui.heading("Signals");
         ui.horizontal(|ui| {
             ui.label("Filter:");
             ui.text_edit_singleline(&mut self.name_filter);
@@ -93,7 +94,12 @@ impl SignalView {
                 let label = format!("{}  ({})", ch.name, ch.data_type);
                 let mut checked = self.selected.contains(&ch.entry_id);
                 ui.add_enabled_ui(plottable, |ui| {
-                    if ui.checkbox(&mut checked, label).changed() {
+                    let resp = ui.checkbox(&mut checked, label);
+                    let changed = resp.changed();
+                    if !ch.metadata.is_empty() {
+                        resp.on_hover_text(&ch.metadata);
+                    }
+                    if changed {
                         if checked { self.selected.insert(ch.entry_id); }
                         else       { self.selected.remove(&ch.entry_id); }
                     }
@@ -229,19 +235,5 @@ impl SignalView {
             }
         }
         Some(ChannelTrace { name: &ch.name, timestamps, values })
-    }
-}
-
-fn is_plottable(dtype: &str) -> bool {
-    matches!(dtype, "double" | "float" | "int64" | "boolean")
-}
-
-fn sample_to_f64(v: &SampleValue) -> Option<f64> {
-    match v {
-        SampleValue::Double(x)    => Some(*x),
-        SampleValue::Float(x)     => Some(*x as f64),
-        SampleValue::Int64(x)     => Some(*x as f64),
-        SampleValue::Boolean(b)   => Some(if *b { 1.0 } else { 0.0 }),
-        SampleValue::StringVal(_) => None,
     }
 }

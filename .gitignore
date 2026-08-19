@@ -1,1 +1,5 @@
 /target
+# colcon / ROS 2 workspace artifacts
+/build
+/install
+/log

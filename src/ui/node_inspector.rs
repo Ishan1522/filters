@@ -1,7 +1,8 @@
 use eframe::egui;
 
 use crate::dsp::spec::{FilterKind, FilterSpec};
-use crate::io::log_loader::LogFile;
+use crate::io::convert::is_plottable;
+use crate::io::model::LogFile;
 use crate::pipeline::node::{Node, NodeKind};
 use crate::pipeline::{FilterGraph, NodeId};
 
@@ -33,8 +34,8 @@ impl NodeInspector {
         ui.separator();
 
         match &mut node.kind {
-            NodeKind::LogChannel { entry_id } => {
-                ui.label(format!("Log channel #{entry_id}"));
+            NodeKind::TopicSource { channel_id } => {
+                ui.label(format!("Topic channel #{channel_id}"));
                 ui.small("Sources are read-only — delete and re-add to change channel.");
             }
             NodeKind::Output { label } => {
@@ -104,16 +105,16 @@ impl NodeInspector {
         ui.checkbox(zero_phase, "Zero-phase (filtfilt)");
     }
 
-    /// When nothing is selected, show a panel for adding LogChannel source
-    /// nodes from the loaded log. This is the entry point that the right-click
-    /// palette can't provide because it doesn't have LogFile access.
+    /// When nothing is selected, show a panel for adding TopicSource nodes
+    /// from the loaded bag / live snapshot. This is the entry point that the
+    /// right-click palette can't provide because it doesn't have LogFile access.
     fn sources_panel(ui: &mut egui::Ui, graph: &mut FilterGraph, log: Option<&LogFile>) {
         ui.label("(no node selected)");
         ui.separator();
-        ui.label("Add source from log:");
+        ui.label("Add source from bag:");
 
         let Some(log) = log else {
-            ui.small("No log loaded.");
+            ui.small("No bag loaded.");
             return;
         };
 
@@ -125,7 +126,7 @@ impl NodeInspector {
                 let label = format!("+ {} ({})", ch.name, ch.data_type);
                 if ui.button(label).clicked() {
                     let mut node = Node::new(
-                        NodeKind::LogChannel { entry_id: ch.entry_id },
+                        NodeKind::TopicSource { channel_id: ch.entry_id },
                         (40.0, 40.0 + (graph.nodes.len() as f32 * 30.0) % 400.0),
                     );
                     node.label = ch.name.clone();
@@ -134,8 +135,4 @@ impl NodeInspector {
             }
         });
     }
-}
-
-fn is_plottable(dtype: &str) -> bool {
-    matches!(dtype, "double" | "float" | "int64" | "boolean")
 }

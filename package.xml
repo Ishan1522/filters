@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<!--
+  colcon metadata for building this package inside a ROS 2 workspace with the
+  ros2-rust tooling (colcon-cargo + colcon-ros-cargo). Enable the `ros2`
+  cargo feature in Cargo.toml to compile the live rclrs client; it needs a
+  ROS 2 distro installed and sourced (rclrs from crates.io — no generated
+  message crates required). See README "Live ROS 2 topics".
+-->
+<package format="3">
+  <name>rosfilter</name>
+  <version>0.2.0</version>
+  <description>ROS 2 filter workbench — analyze rosbag recordings (MCAP) and live ROS 2 topics, design filters, export them as ROS 2 nodes</description>
+  <maintainer email="github@example.invalid">Ishan1522</maintainer>
+  <license>MIT</license>
+
+  <!-- ros2-rust cargo build type (ament_cargo). Requires the ros2_rust
+       toolchain: pip install colcon-cargo colcon-ros-cargo -->
+  <build_type>cargo</build_type>
+
+  <export>
+    <build_type>cargo</build_type>
+  </export>
+</package>
