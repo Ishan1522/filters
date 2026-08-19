@@ -313,7 +313,6 @@ fn scalar_to_f64(v: &Value<'_>) -> Option<f64> {
     match s {
         SimpleValue::Double(d) => Some(*d),
         SimpleValue::Float(f) => Some(*f as f64),
-        SimpleValue::LongDouble(d) => Some(*d),
         SimpleValue::Int8(i) => Some(*i as f64),
         SimpleValue::Int16(i) => Some(*i as f64),
         SimpleValue::Int32(i) => Some(*i as f64),
@@ -323,6 +322,8 @@ fn scalar_to_f64(v: &Value<'_>) -> Option<f64> {
         SimpleValue::Uint32(u) => Some(*u as f64),
         SimpleValue::Uint64(u) => Some(*u as f64),
         SimpleValue::Boolean(b) => Some(if *b { 1.0 } else { 0.0 }),
+        // LongDouble is a raw pointer with platform-dependent width
+        // (80-bit x87 on x86) — not representable as f64, skip.
         _ => None,
     }
 }
@@ -379,5 +380,52 @@ mod tests {
         };
         assert!(scalar.parse_path().is_empty());
         assert_eq!(scalar.display_name(), "/vel");
+    }
+
+    /// CI smoke test: subscribe to a live topic via rclrs and assert data
+    /// actually flows into the ring buffer.
+    ///
+    /// Requires a sourced ROS 2 Jazzy env and a publisher on `/ci/vel`
+    /// (the workflow starts `ci/publish_fixture.py` in the background):
+    ///
+    ///   ROS_LOCALHOST_ONLY=1 cargo test --features ros2 live_smoke -- --ignored
+    #[cfg(feature = "ros2")]
+    #[test]
+    #[ignore = "requires a live ROS 2 node + publisher; run by CI"]
+    fn live_smoke_receives_data() {
+        use std::time::{Duration, Instant};
+
+        let client = Ros2LiveClient::connect(
+            Some(0),
+            vec![LiveTopicConfig {
+                topic: "/ci/vel".into(),
+                msg_type: "std_msgs/msg/Float64".into(),
+                path: String::new(),
+            }],
+        );
+
+        // Drain status until connected (or a clear error).
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Ok(s) = client.status_rx.try_recv() {
+                if matches!(s, LiveStatus::Error(e)) {
+                    panic!("live client error: {e}");
+                }
+            }
+            if client.store.stats().1 > 0 {
+                break;
+            }
+            if Instant::now() > deadline {
+                panic!("no samples received within 10s — is the publisher up?");
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+
+        let (n_topics, n_samples) = client.store.stats();
+        eprintln!("live smoke: {n_topics} topics, {n_samples} samples received");
+        assert!(n_samples > 0);
+        client.disconnect();
+        // Give the thread a moment to exit before the test process ends.
+        std::thread::sleep(Duration::from_millis(500));
     }
 }

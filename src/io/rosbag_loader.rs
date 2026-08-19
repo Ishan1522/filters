@@ -495,4 +495,45 @@ mod tests {
         assert_eq!(log.channels.len(), 1);
         assert_eq!(log.channels[0].name, "/vel");
     }
+
+    /// CI smoke test: load a bag produced by the real `ros2 bag record`
+    /// (Jazzy, MCAP storage) and assert the decoder sees the expected topics.
+    ///
+    /// Ignored by default — invoked explicitly by the GitHub Actions
+    /// workflow, which records the fixture with real ROS 2 tooling first:
+    ///
+    ///   ROSFILTER_TEST_BAG=/tmp/test_bag/test_bag_0.mcap \
+    ///     cargo test --features ros2 real_bag_loads -- --ignored
+    #[test]
+    #[ignore = "requires a real `ros2 bag record` output; run by CI"]
+    fn real_bag_loads_in_ci() {
+        let path = std::env::var("ROSFILTER_TEST_BAG")
+            .expect("ROSFILTER_TEST_BAG not set (CI should record a bag first)");
+        let path = std::path::Path::new(&path);
+        assert!(path.exists(), "bag file does not exist: {}", path.display());
+
+        let (log, stats) = load(path).expect("load real ros2 bag");
+        assert!(
+            !log.channels.is_empty(),
+            "expected at least one channel from the fixture bag"
+        );
+        assert!(
+            stats.messages_decoded > 0,
+            "expected decoded messages, got none (unsupported={})",
+            stats.messages_unsupported
+        );
+
+        eprintln!("real bag: {} channels, {} messages decoded", log.channels.len(), stats.messages_decoded);
+        for ch in &log.channels {
+            eprintln!("  channel: {} ({}) — {} samples", ch.name, ch.data_type, log.data[&ch.entry_id].len());
+        }
+
+        // The fixture publishes /ci/vel (Float64), /ci/imu (Imu), /ci/twist
+        // (Twist) — expect at least the scalar channel to be present.
+        let names: Vec<&str> = log.channels.iter().map(|c| c.name.as_str()).collect();
+        assert!(
+            names.iter().any(|n| n.contains("/ci/vel")),
+            "missing /ci/vel in decoded channels: {names:?}"
+        );
+    }
 }
