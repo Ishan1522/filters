@@ -520,7 +520,7 @@ mod tests {
     }
 
     #[cfg(feature = "ros2")]
-    impl rclrs::rosidl_runtime_rs::traits::Message for CiFloat64 {
+    impl rclrs::MessageIDL for CiFloat64 {
         type RmwMsg = CiFloat64;
 
         fn into_rmw_message(
@@ -545,7 +545,7 @@ mod tests {
     unsafe impl Sync for TypeSupportPtr {}
 
     #[cfg(feature = "ros2")]
-    impl rclrs::rosidl_runtime_rs::traits::RmwMessage for CiFloat64 {
+    impl rclrs::RmwMessageIDL for CiFloat64 {
         const TYPE_NAME: &'static str = "std_msgs/msg/Float64";
 
         fn get_type_support() -> *const std::ffi::c_void {
