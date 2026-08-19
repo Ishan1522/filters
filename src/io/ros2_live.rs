@@ -212,10 +212,12 @@ fn run_network_thread(
             return;
         }
     };
+    // Worker for the (worker-scoped) dynamic subscriptions — see subscribe_one.
+    let worker = node.create_worker(());
 
     let mut n_ok = 0usize;
     for cfg in &configs {
-        match subscribe_one(&node, cfg, &store) {
+        match subscribe_one(&worker, cfg, &store) {
             Ok(()) => n_ok += 1,
             Err(e) => {
                 let _ = status_tx.send(LiveStatus::Error(format!(
@@ -246,7 +248,7 @@ fn run_network_thread(
 /// Create one dynamic subscription for a config, wiring it into the store.
 #[cfg(feature = "ros2")]
 fn subscribe_one(
-    node: &rclrs::Node,
+    worker: &rclrs::Worker<()>,
     cfg: &LiveTopicConfig,
     store: &Arc<LiveStore>,
 ) -> Result<(), String> {
@@ -261,10 +263,16 @@ fn subscribe_one(
     let topic_type = MessageTypeName::try_from(cfg.msg_type.as_str())
         .map_err(|_| format!("invalid message type '{}'", cfg.msg_type))?;
 
-    node.create_dynamic_subscription(
+    // NOTE: worker-scoped dynamic subscription. rclrs 0.7 dispatches
+    // NODE-scoped dynamic subscription callbacks through an async-task hop
+    // (commands.run_async) that never completes under the basic executor's
+    // spin — verified by CI: a typed subscription on the same topic receives
+    // data, the node-scoped dynamic one receives nothing. The worker-scoped
+    // path calls the callback synchronously.
+    worker.create_dynamic_subscription(
         topic_type,
         cfg.topic.as_str().qos(QOS_PROFILE_SENSOR_DATA),
-        move |msg: DynamicMessage, info: MessageInfo| {
+        move |_payload: &mut (), msg: DynamicMessage, info: MessageInfo| {
             match extract_path(&msg, &path) {
                 Some(v) => store.push(entry_id, timestamp_us(&info), v),
                 // Keep a low-volume diagnostic: if messages arrive but the
