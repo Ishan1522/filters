@@ -61,16 +61,22 @@ impl LivePanel {
     /// Drain any pending status updates from the live thread. Called once
     /// per frame from the app.
     pub fn poll(&mut self) {
-        if let Some(client) = &self.client {
+        // Collect the terminal flag first so the borrow of `self.client`
+        // ends before we reassign it below.
+        let terminal = if let Some(client) = &self.client {
+            let mut terminal = false;
             while let Ok(s) = client.status_rx.try_recv() {
                 // A terminal state means the thread exited; drop the client
                 // so the UI shows the disconnected state cleanly.
-                let terminal = matches!(s, LiveStatus::Disconnected);
+                terminal = matches!(s, LiveStatus::Disconnected);
                 self.status = Some(s);
-                if terminal {
-                    self.client = None;
-                }
             }
+            terminal
+        } else {
+            false
+        };
+        if terminal {
+            self.client = None;
         }
     }
 
@@ -193,7 +199,7 @@ impl LivePanel {
                 ui.colored_label(egui::Color32::LIGHT_RED, format!("✗ {e}"))
             }
             None => ui.label("not started"),
-        }
+        };
 
         if let Some(client) = &self.client {
             let (n_topics, n_samples) = client.store.stats();

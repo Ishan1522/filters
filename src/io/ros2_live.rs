@@ -88,7 +88,7 @@ impl LiveTopicConfig {
                 if let Some(open) = seg.find('[') {
                     if let Some(close) = seg.rfind(']') {
                         if let Ok(idx) = seg[open + 1..close].trim().parse::<usize>() {
-                            return PathSegment::Field(seg[..open].to_string());
+                            return PathSegment::Index(idx);
                         }
                     }
                 }
@@ -270,7 +270,8 @@ fn subscribe_one(
 fn extract_path(msg: &DynamicMessage, path: &[PathSegment]) -> Option<f64> {
     if path.is_empty() {
         // Scalar message (e.g. Float64 / Bool): the value is the whole message.
-        let (_, v) = msg.view().iter().next()?;
+        let view = msg.view();
+        let (_, v) = view.iter().next()?;
         return scalar_to_f64(&v);
     }
 
