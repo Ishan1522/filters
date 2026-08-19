@@ -145,8 +145,15 @@ jobs:
           cleanup() { kill "$PUB_PID" 2>/dev/null || true; }
           trap cleanup EXIT
           sleep 3   # let DDS discovery settle before the subscriber connects
-          cargo test --locked --features ros2 live_smoke_receives_data -- --ignored
-          echo "publisher log tail:"
-          tail -5 /tmp/fixture_live_pub.log || true
+          # Prove the fixture data is actually on the wire before blaming rclrs.
+          echo "--- ros2 topic list ---"
+          timeout 10 ros2 topic list
+          echo "--- ros2 topic echo /ci/vel (first message) ---"
+          timeout 10 ros2 topic echo /ci/vel --once || echo "(topic echo failed)"
+          TEST_RC=0
+          cargo test --locked --features ros2 live_smoke_receives_data -- --ignored || TEST_RC=$?
+          echo "--- fixture publisher log tail ---"
+          tail -20 /tmp/fixture_live_pub.log || true
+          exit $TEST_RC
         env:
           ROS_LOCALHOST_ONLY: "1"

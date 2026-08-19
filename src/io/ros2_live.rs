@@ -440,8 +440,9 @@ mod tests {
         );
 
         // Drain status until connected (or a clear error).
-        let deadline = Instant::now() + Duration::from_secs(10);
-        let mut last_report = Instant::now();
+        let started = Instant::now();
+        let deadline = started + Duration::from_secs(10);
+        let mut last_report = started;
         loop {
             while let Ok(s) = client.status_rx.try_recv() {
                 if let LiveStatus::Error(e) = s {
@@ -454,9 +455,9 @@ mod tests {
             }
             if Instant::now() - last_report >= Duration::from_secs(2) {
                 eprintln!(
-                    "live smoke: t+{}s — topics={n_topics} samples={n_samples} \
+                    "live smoke: t+{:.0}s — topics={n_topics} samples={n_samples} \
                      received_not_extracted={}",
-                    deadline.elapsed().as_secs(),
+                    started.elapsed().as_secs_f32(),
                     RECEIVED_NO_EXTRACT.load(Ordering::Relaxed),
                 );
                 last_report = Instant::now();
