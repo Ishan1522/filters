@@ -82,17 +82,20 @@ impl LiveTopicConfig {
         }
         self.path
             .split('.')
-            .map(|seg| {
+            .flat_map(|seg| {
                 let seg = seg.trim();
-                // Support `data[3]` → Index(3)
+                // Support `data[3]` → [Field("data"), Index(3)]
                 if let Some(open) = seg.find('[') {
                     if let Some(close) = seg.rfind(']') {
                         if let Ok(idx) = seg[open + 1..close].trim().parse::<usize>() {
-                            return PathSegment::Index(idx);
+                            return vec![
+                                PathSegment::Field(seg[..open].to_string()),
+                                PathSegment::Index(idx),
+                            ];
                         }
                     }
                 }
-                PathSegment::Field(seg.to_string())
+                vec![PathSegment::Field(seg.to_string())]
             })
             .collect()
     }
