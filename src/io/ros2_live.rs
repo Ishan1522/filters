@@ -413,7 +413,7 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
             if let Ok(s) = client.status_rx.try_recv() {
-                if matches!(s, LiveStatus::Error(e)) {
+                if let LiveStatus::Error(e) = s {
                     panic!("live client error: {e}");
                 }
             }
