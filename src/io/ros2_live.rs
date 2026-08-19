@@ -215,9 +215,15 @@ fn run_network_thread(
     let worker = node.create_worker(());
 
     let mut n_ok = 0usize;
+    // CRITICAL: keep every subscription handle alive for the whole session —
+    // dropping one silently unregisters it from the executor's wait set.
+    let mut _subscriptions: Vec<rclrs::WorkerDynamicSubscription<()>> = Vec::new();
     for cfg in &configs {
         match subscribe_one(&worker, cfg, &store) {
-            Ok(()) => n_ok += 1,
+            Ok(sub) => {
+                _subscriptions.push(sub);
+                n_ok += 1;
+            }
             Err(e) => {
                 let _ = status_tx.send(LiveStatus::Error(format!(
                     "subscribe {} ({}): {e}",
@@ -245,12 +251,19 @@ fn run_network_thread(
 }
 
 /// Create one dynamic subscription for a config, wiring it into the store.
+///
+/// Returns the subscription handle — the CALLER MUST KEEP IT ALIVE for the
+/// session. Dropping it drops the rclrs `WaitableLifecycle`, which flips the
+/// waitable's `in_use` flag to false and makes the executor silently remove
+/// the subscription from its wait set (CI pinned this exact failure: every
+/// A/B variant that bound the handle received data; the client that
+/// discarded it received nothing).
 #[cfg(feature = "ros2")]
 fn subscribe_one(
     worker: &rclrs::Worker<()>,
     cfg: &LiveTopicConfig,
     store: &Arc<LiveStore>,
-) -> Result<(), String> {
+) -> Result<rclrs::WorkerDynamicSubscription<()>, String> {
     let entry_id = store.announce(cfg.display_name(), cfg.msg_type.clone());
     let store = Arc::clone(store);
     let path = cfg.parse_path();
@@ -262,43 +275,32 @@ fn subscribe_one(
     let topic_type = MessageTypeName::try_from(cfg.msg_type.as_str())
         .map_err(|_| format!("invalid message type '{}'", cfg.msg_type))?;
 
-    // NOTE: worker-scoped dynamic subscription. rclrs 0.7 dispatches
-    // NODE-scoped dynamic subscription callbacks through an async-task hop
-    // (commands.run_async) that never completes under the basic executor's
-    // spin — verified by CI: a typed subscription on the same topic receives
-    // data, the node-scoped dynamic one receives nothing. The worker-scoped
-    // path calls the callback synchronously.
-    //
-    // QoS: DEFAULT (reliable). CI proved that QOS_PROFILE_SENSOR_DATA
-    // (best-effort) matched NO data against the fixture's reliable
-    // publisher, while the default reliable profile delivered — a filter
-    // workbench wants every sample anyway.
-    worker.create_dynamic_subscription(
-        topic_type,
-        cfg.topic.as_str(),
-        move |_payload: &mut (), msg: DynamicMessage, info: MessageInfo| {
-            match extract_path(&msg, &path) {
-                Some(v) => store.push(entry_id, timestamp_us(&info), v),
-                // Keep a low-volume diagnostic: if messages arrive but the
-                // field path can't be resolved, that is a config bug worth
-                // surfacing (first occurrence + then every 500th).
-                None => {
-                    let n = RECEIVED_NO_EXTRACT.fetch_add(1, Ordering::Relaxed);
-                    if n == 0 || n % 500 == 0 {
-                        eprintln!(
-                            "live: received msg on {} ({} samples so far) but \
-                             field path '{:?}' did not yield a scalar",
-                            topic_display,
-                            store.stats().1,
-                            path_display,
-                        );
+    worker
+        .create_dynamic_subscription(
+            topic_type,
+            cfg.topic.as_str(),
+            move |_payload: &mut (), msg: DynamicMessage, info: MessageInfo| {
+                match extract_path(&msg, &path) {
+                    Some(v) => store.push(entry_id, timestamp_us(&info), v),
+                    // Keep a low-volume diagnostic: if messages arrive but the
+                    // field path can't be resolved, that is a config bug worth
+                    // surfacing (first occurrence + then every 500th).
+                    None => {
+                        let n = RECEIVED_NO_EXTRACT.fetch_add(1, Ordering::Relaxed);
+                        if n == 0 || n % 500 == 0 {
+                            eprintln!(
+                                "live: received msg on {} ({} samples so far) but \
+                                 field path '{:?}' did not yield a scalar",
+                                topic_display,
+                                store.stats().1,
+                                path_display,
+                            );
+                        }
                     }
                 }
-            }
-        },
-    )
-    .map(|_| ())
-    .map_err(|e| e.to_string())
+            },
+        )
+        .map_err(|e| e.to_string())
 }
 
 /// Total messages received but not extractable (across all subscriptions) —
