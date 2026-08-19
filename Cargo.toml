@@ -17,7 +17,7 @@ rosbag = ["dep:mcap"]
 # Live ROS 2 topics via rclrs (official ros2-rust client library), using
 # dynamic messages (runtime introspection) so no generated message crates are
 # needed. Requires a ROS 2 distro installed and sourced. See README.
-ros2 = ["dep:rclrs"]
+ros2 = ["dep:rclrs", "dep:libloading"]
 
 [dependencies]
 # GUI
@@ -36,8 +36,10 @@ mcap         = { version = "0.25", optional = true }
 # Live ROS 2 topics — `ros2` feature. rclrs is published on crates.io; it
 # links against the system ROS 2 libraries (a distro must be installed and
 # sourced). Subscriptions are dynamic (runtime message introspection), so no
-# generated message crates are required.
+# generated message crates are required. libloading is used by the CI
+# typed-subscription A/B test to resolve the std_msgs type support.
 rclrs        = { version = "0.7", optional = true }
+libloading   = { version = "0.8", optional = true }
 
 # Cross-thread communication (live client thread ↔ UI thread)
 crossbeam-channel = "0.5"

@@ -18,8 +18,8 @@
 //! - the UI reads a one-frame [`LogFile`] snapshot each frame and feeds it to
 //!   the exact same signal/graph views used for offline rosbag analysis.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -29,8 +29,9 @@ use crate::io::live_store::LiveStore;
 
 #[cfg(feature = "ros2")]
 use rclrs::{
-    Context, CreateBasicExecutor, DynamicMessage, InitOptions, IntoPrimitiveOptions, MessageInfo,
-    MessageTypeName, QOS_PROFILE_SENSOR_DATA, SequenceValue, SimpleValue, SpinOptions, Value,
+    Context, CreateBasicExecutor, DynamicMessage, ExecutorCommands, InitOptions,
+    IntoPrimitiveOptions, MessageInfo, MessageTypeName, QOS_PROFILE_SENSOR_DATA, SequenceValue,
+    SimpleValue, SpinOptions, Value,
 };
 
 /// Status messages from the live thread to the UI.
@@ -106,7 +107,10 @@ impl LiveTopicConfig {
 pub struct Ros2LiveClient {
     pub status_rx: Receiver<LiveStatus>,
     pub store: Arc<LiveStore>,
-    stop: Arc<AtomicBool>,
+    /// Set by the network thread once the executor exists; lets the UI halt
+    /// the (otherwise infinite) spin cleanly. `None` only in the tiny window
+    /// before the thread starts.
+    commands: Arc<Mutex<Option<Arc<ExecutorCommands>>>>,
 }
 
 impl Ros2LiveClient {
@@ -116,22 +120,24 @@ impl Ros2LiveClient {
         let (status_tx, status_rx) = unbounded();
         let store = LiveStore::new();
         let store_clone = Arc::clone(&store);
-        let stop = Arc::new(AtomicBool::new(false));
-        let stop_clone = Arc::clone(&stop);
+        let commands = Arc::new(Mutex::new(None));
+        let commands_clone = Arc::clone(&commands);
 
         thread::spawn(move || {
-            run_network_thread(domain_id, configs, store_clone, status_tx, stop_clone);
+            run_network_thread(domain_id, configs, store_clone, status_tx, commands_clone);
         });
 
         Self {
             status_rx,
             store,
-            stop,
+            commands,
         }
     }
 
     pub fn disconnect(&self) {
-        self.stop.store(true, Ordering::Relaxed);
+        if let Some(c) = self.commands.lock().unwrap().as_ref() {
+            c.halt_spinning();
+        }
     }
 
     /// One-shot topic discovery: list (topic, message type) pairs visible on
@@ -187,7 +193,7 @@ fn run_network_thread(
     configs: Vec<LiveTopicConfig>,
     store: Arc<LiveStore>,
     status_tx: Sender<LiveStatus>,
-    stop: Arc<AtomicBool>,
+    commands_slot: Arc<Mutex<Option<Arc<ExecutorCommands>>>>,
 ) {
     let _ = status_tx.send(LiveStatus::Initializing);
 
@@ -223,23 +229,16 @@ fn run_network_thread(
         return; // nothing could be subscribed; status already carries the error
     }
 
+    // Hand the commands handle to the UI thread so disconnect() can halt the
+    // (otherwise infinite) spin below.
+    *commands_slot.lock().unwrap() = Some(executor.commands().clone());
+
     let _ = status_tx.send(LiveStatus::Connected);
-    while !stop.load(Ordering::Relaxed) {
-        let errors = executor.spin(SpinOptions::default().timeout(Duration::from_millis(200)));
-        // A spin with a timeout reports RCL_RET_TIMEOUT on every slice — that
-        // is the expected "nothing happened this tick" signal, not an error.
-        let fatal: Vec<_> = errors.into_iter().filter(|e| !e.is_timeout()).collect();
-        if !fatal.is_empty() {
-            let _ = status_tx.send(LiveStatus::Error(format!(
-                "executor: {}",
-                fatal
-                    .iter()
-                    .map(|e| e.to_string())
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            )));
-            break;
-        }
+    // Infinite spin: rclrs's designed steady-state executor loop. Stopping is
+    // done by the UI via ExecutorCommands::halt_spinning.
+    let errors = executor.spin(SpinOptions::default());
+    if let Some(e) = errors.first() {
+        let _ = status_tx.send(LiveStatus::Error(format!("executor: {e}")));
     }
     let _ = status_tx.send(LiveStatus::Disconnected);
 }
@@ -501,5 +500,109 @@ mod tests {
         client.disconnect();
         // Give the thread a moment to exit before the test process ends.
         std::thread::sleep(Duration::from_millis(500));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Typed-vs-dynamic A/B: rclrs 0.7's dynamic subscriptions appeared to
+    // receive nothing while a plain rclpy subscriber on the same topic got
+    // data. This test uses a hand-rolled `std_msgs/msg/Float64` message
+    // (repr(C) double + the real C type-support pointer from the installed
+    // distro) with a TYPED subscription, so CI can tell whether the fault is
+    // in the dynamic-message path or in the client/env generally.
+    // ──────────────────────────────────────────────────────────────────────
+
+    /// Minimal `std_msgs/msg/Float64` (idiomatic == RMW-native: one double).
+    #[cfg(feature = "ros2")]
+    #[repr(C)]
+    #[derive(Clone, Debug, Default)]
+    struct CiFloat64 {
+        data: f64,
+    }
+
+    #[cfg(feature = "ros2")]
+    impl rosidl_runtime_rs::traits::Message for CiFloat64 {
+        type RmwMsg = CiFloat64;
+
+        fn into_rmw_message(
+            msg: std::borrow::Cow<'_, Self>,
+        ) -> std::borrow::Cow<'_, Self::RmwMsg> {
+            msg
+        }
+
+        fn from_rmw_message(msg: Self::RmwMsg) -> Self {
+            msg
+        }
+    }
+
+    #[cfg(feature = "ros2")]
+    impl rosidl_runtime_rs::traits::RmwMessage for CiFloat64 {
+        const TYPE_NAME: &'static str = "std_msgs/msg/Float64";
+
+        fn get_type_support() -> *const std::ffi::c_void {
+            use std::sync::OnceLock;
+            static TS: OnceLock<*const std::ffi::c_void> = OnceLock::new();
+            *TS.get_or_init(|| {
+                let prefix = std::env::var("AMENT_PREFIX_PATH")
+                    .map(|p| p.split(':').next().unwrap_or("/opt/ros/jazzy").to_string())
+                    .unwrap_or_else(|_| "/opt/ros/jazzy".to_string());
+                let path = std::path::Path::new(&prefix)
+                    .join("lib")
+                    .join("libstd_msgs__rosidl_typesupport_c.so");
+                // SAFETY: dlopen of a trusted system library; see rclrs's own
+                // get_type_support_library for the same pattern.
+                let lib = unsafe { libloading::Library::new(&path) }
+                    .expect("libstd_msgs__rosidl_typesupport_c.so");
+                // SAFETY: symbol has the expected type by the rosidl_typesupport_c
+                // ABI; pointer kept valid by leaking the library below.
+                let getter: libloading::Symbol<
+                    unsafe extern "C" fn() -> *const std::ffi::c_void,
+                > = unsafe {
+                    lib.get(
+                        b"rosidl_typesupport_c__get_message_type_support_handle__std_msgs__msg__Float64",
+                    )
+                    .expect("type support getter symbol")
+                };
+                let ptr = unsafe { getter() };
+                // Keep the library loaded for the process lifetime.
+                std::mem::forget(lib);
+                ptr
+            })
+        }
+    }
+
+    /// A/B control: a TYPED rclrs subscription on `/ci/vel`.
+    #[cfg(feature = "ros2")]
+    #[test]
+    #[ignore = "requires a live ROS 2 node + publisher; run by CI"]
+    fn live_typed_smoke_receives_data() {
+        use rclrs::{Context, InitOptions};
+        use std::sync::atomic::AtomicUsize;
+        use std::time::Duration;
+
+        let count = Arc::new(AtomicUsize::new(0));
+        let count_clone = Arc::clone(&count);
+
+        let context =
+            Context::from_env(InitOptions::new().with_domain_id(Some(0))).expect("context");
+        let mut executor = context.create_basic_executor();
+        let node = executor.create_node("rosfilter_typed_diag").expect("node");
+        let _sub = node
+            .create_subscription::<CiFloat64, _>(
+                "/ci/vel",
+                move |_msg: CiFloat64, _info: MessageInfo| {
+                    count_clone.fetch_add(1, Ordering::Relaxed);
+                },
+            )
+            .expect("typed subscription");
+
+        // Single long spin (up to 6s) — the runner dispatches continuously.
+        let errors = executor.spin(SpinOptions::default().timeout(Duration::from_secs(6)));
+        eprintln!(
+            "typed spin errors: {:?} (timeout is expected at the end)",
+            errors.iter().map(|e| e.to_string()).collect::<Vec<_>>()
+        );
+        let n = count.load(Ordering::Relaxed);
+        eprintln!("typed: received {n} messages");
+        assert!(n > 0, "typed subscription received nothing on /ci/vel");
     }
 }

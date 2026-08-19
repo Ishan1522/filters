@@ -164,6 +164,8 @@ jobs:
           timeout 10 ros2 topic echo /ci/vel --once || echo "(topic echo failed)"
           TEST_RC=0
           cargo test --locked --features ros2 live_smoke_receives_data -- --ignored || TEST_RC=$?
+          echo "--- typed A/B: rclrs typed subscription on /ci/vel ---"
+          cargo test --locked --features ros2 live_typed_smoke_receives_data -- --ignored || TEST_RC=$?
           echo "--- fixture publisher log tail ---"
           tail -20 /tmp/fixture_live_pub.log || true
           exit $TEST_RC

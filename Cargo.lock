@@ -3024,6 +3024,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui_plot",
+ "libloading",
  "mcap",
  "nalgebra",
  "rclrs",
