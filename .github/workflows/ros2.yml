@@ -166,6 +166,8 @@ jobs:
           cargo test --locked --features ros2 live_smoke_receives_data -- --ignored || TEST_RC=$?
           echo "--- typed A/B: rclrs typed subscription on /ci/vel ---"
           cargo test --locked --features ros2 live_typed_smoke_receives_data -- --ignored || TEST_RC=$?
+          echo "--- dynamic in-process A/B (same shape as typed, no client) ---"
+          cargo test --locked --features ros2 live_dynamic_inprocess_smoke -- --ignored || TEST_RC=$?
           echo "--- fixture publisher log tail ---"
           tail -20 /tmp/fixture_live_pub.log || true
           exit $TEST_RC
