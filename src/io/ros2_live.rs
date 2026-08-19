@@ -226,10 +226,13 @@ fn run_network_thread(
     let _ = status_tx.send(LiveStatus::Connected);
     while !stop.load(Ordering::Relaxed) {
         let errors = executor.spin(SpinOptions::default().timeout(Duration::from_millis(200)));
-        if !errors.is_empty() {
+        // A spin with a timeout reports RCL_RET_TIMEOUT on every slice — that
+        // is the expected "nothing happened this tick" signal, not an error.
+        let fatal: Vec<_> = errors.into_iter().filter(|e| !e.is_timeout()).collect();
+        if !fatal.is_empty() {
             let _ = status_tx.send(LiveStatus::Error(format!(
                 "executor: {}",
-                errors
+                fatal
                     .iter()
                     .map(|e| e.to_string())
                     .collect::<Vec<_>>()
