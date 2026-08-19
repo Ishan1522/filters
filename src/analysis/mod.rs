@@ -4,7 +4,7 @@ pub mod wavelet;     // existing
 
 /// Estimate sample rate (Hz) from a sequence of microsecond timestamps
 /// using the median of consecutive deltas. Median, not mean, because
-/// WPILOG can have occasional jitter from logger backpressure.
+/// rosbag recordings can have occasional jitter from logger backpressure.
 pub fn estimate_sample_rate_hz(timestamps_us: &[u64]) -> Option<f64> {
     if timestamps_us.len() < 2 {
         return None;

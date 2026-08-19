@@ -3,7 +3,8 @@ use std::collections::{HashMap, HashSet};
 use slotmap::{new_key_type, SlotMap};
 
 use crate::analysis;
-use crate::io::log_loader::{LogFile, SampleValue};
+use crate::io::convert::sample_to_f64;
+use crate::io::model::LogFile;
 use crate::pipeline::node::{Node, NodeKind, Signal};
 use crate::pipeline::nodes;
 
@@ -23,7 +24,7 @@ pub struct Edge {
 pub enum EvalError {
     UnconnectedInput { node: NodeId, port: usize },
     Cycle { at: NodeId },
-    MissingChannel { entry_id: u32 },
+    MissingChannel { channel_id: u32 },
 }
 
 #[derive(Debug, Default, Clone)]
@@ -125,7 +126,7 @@ impl<'a> EvalContext<'a> {
 
         let node = self.graph.nodes.get(id).expect("node id from graph");
         let result = match &node.kind {
-            NodeKind::LogChannel { entry_id } => self.load_log_channel(*entry_id)?,
+            NodeKind::TopicSource { channel_id } => self.load_topic_channel(*channel_id)?,
 
             NodeKind::Output { .. } => {
                 // Outputs just pass through their input. The graph evaluator
@@ -164,14 +165,15 @@ impl<'a> EvalContext<'a> {
         Ok(result)
     }
 
-    /// Load a log channel and convert it into the universal Signal type:
-    /// resampled onto a uniform grid at the channel's natural rate.
-    fn load_log_channel(&self, entry_id: u32) -> Result<Signal, EvalError> {
+    /// Load a topic channel (from a rosbag or a live snapshot) and convert it
+    /// into the universal Signal type: resampled onto a uniform grid at the
+    /// channel's natural rate.
+    fn load_topic_channel(&self, channel_id: u32) -> Result<Signal, EvalError> {
         let samples = self
             .log
             .data
-            .get(&entry_id)
-            .ok_or(EvalError::MissingChannel { entry_id })?;
+            .get(&channel_id)
+            .ok_or(EvalError::MissingChannel { channel_id })?;
 
         let mut timestamps = Vec::with_capacity(samples.len());
         let mut values     = Vec::with_capacity(samples.len());
@@ -192,26 +194,16 @@ impl<'a> EvalContext<'a> {
     }
 }
 
-fn sample_to_f64(v: &SampleValue) -> Option<f64> {
-    match v {
-        SampleValue::Double(x)    => Some(*x),
-        SampleValue::Float(x)     => Some(*x as f64),
-        SampleValue::Int64(x)     => Some(*x as f64),
-        SampleValue::Boolean(b)   => Some(if *b { 1.0 } else { 0.0 }),
-        SampleValue::StringVal(_) => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::dsp::spec::{FilterKind, FilterSpec};
+    use crate::io::model::{Channel, Sample};
     use crate::pipeline::node::Node;
-    use std::sync::Arc;
 
     fn synthetic_log() -> LogFile {
         // Build a tiny in-memory log with one channel of a noisy sine wave.
-        use crate::io::log_loader::{Channel, Sample, SampleValue};
+        use crate::io::model::SampleValue;
         let fs = 1000.0_f64;
         let n  = 1000usize;
         let mut data = HashMap::new();
@@ -229,9 +221,9 @@ mod tests {
         LogFile {
             channels: vec![Channel {
                 entry_id:  1,
-                name:      "sine".to_string(),
-                data_type: "double".to_string(),
-                metadata:  String::new(),
+                name:      "/sim/sine".to_string(),
+                data_type: "float64".to_string(),
+                metadata:  "std_msgs/msg/Float64".to_string(),
             }],
             data,
         }
@@ -242,7 +234,7 @@ mod tests {
         let log = synthetic_log();
         let mut g = FilterGraph::new();
 
-        let src = g.add_node(Node::new(NodeKind::LogChannel { entry_id: 1 }, (0.0, 0.0)));
+        let src = g.add_node(Node::new(NodeKind::TopicSource { channel_id: 1 }, (0.0, 0.0)));
         let mut spec = FilterSpec::default();
         spec.kind = FilterKind::ButterworthLowpass;
         spec.cutoff_hz = 50.0;

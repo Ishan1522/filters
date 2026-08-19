@@ -1,10 +1,10 @@
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
+use crate::io::model::LogFile;
 use crate::pipeline::{FilterGraph, NodeId};
 use crate::pipeline::node::NodeKind;
 
 use egui_plot::{Legend, Line, Plot, PlotPoints};
-use crate::io::log_loader::LogFile;
 
 const NODE_WIDTH:    f32 = 160.0;
 const NODE_HEADER_H: f32 = 22.0;
@@ -331,12 +331,12 @@ impl NodeGraphView {
 
         let selected = self.selected == Some(id);
         let body_color = match &node.kind {
-            NodeKind::LogChannel { .. } => Color32::from_rgb(60, 80, 110),
-            NodeKind::Output { .. }     => Color32::from_rgb(110, 70, 70),
-            NodeKind::Filter { .. }     => Color32::from_rgb(70, 100, 70),
-            NodeKind::Sum               => Color32::from_rgb(90, 80, 110),
-            NodeKind::Differentiate     => Color32::from_rgb(100, 90, 60),
-            NodeKind::Gain { .. }       => Color32::from_rgb(80, 80, 80),
+            NodeKind::TopicSource { .. } => Color32::from_rgb(60, 80, 110),
+            NodeKind::Output { .. }      => Color32::from_rgb(110, 70, 70),
+            NodeKind::Filter { .. }      => Color32::from_rgb(70, 100, 70),
+            NodeKind::Sum                => Color32::from_rgb(90, 80, 110),
+            NodeKind::Differentiate      => Color32::from_rgb(100, 90, 60),
+            NodeKind::Gain { .. }        => Color32::from_rgb(80, 80, 80),
         };
 
         // Body.

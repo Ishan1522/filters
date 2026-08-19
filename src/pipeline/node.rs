@@ -59,9 +59,9 @@ impl Port {
 /// the dispatch site, but for a tool with maybe 15 node types total, that's fine.
 #[derive(Debug, Clone)]
 pub enum NodeKind {
-    /// Source node: pulls a channel from a loaded log file by entry_id.
-    /// Has 0 inputs, 1 output.
-    LogChannel { entry_id: u32 },
+    /// Source node: pulls a channel (rosbag topic / live topic) from the
+    /// loaded `LogFile` by channel id. Has 0 inputs, 1 output.
+    TopicSource { channel_id: u32 },
 
     /// Sink: marks a signal as a "graph output" for the UI to plot.
     /// Has 1 input, 0 outputs (well, 0 outgoing graph edges — the value
@@ -107,10 +107,10 @@ impl Node {
 /// so the UI and the evaluator agree on what every node type looks like.
 fn ports_for_kind(kind: &NodeKind) -> (Vec<Port>, Vec<Port>, String) {
     match kind {
-        NodeKind::LogChannel { entry_id } => (
+        NodeKind::TopicSource { channel_id } => (
             vec![],
             vec![Port::new("out")],
-            format!("log channel #{entry_id}"),
+            format!("topic channel #{channel_id}"),
         ),
         NodeKind::Output { label } => (
             vec![Port::new("in")],
