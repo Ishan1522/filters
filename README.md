@@ -1,6 +1,6 @@
-# wpifilter — ROS 2 filter workbench
+# rosfilter — ROS 2 filter workbench
 
-![wpifilter](image.png)
+![rosfilter](image.png)
 
 A desktop filter design + analysis workbench for **ROS 2** signal data — built
 for both **simulation** (Gazebo rosbags) and **real robots** (live topics).
@@ -46,14 +46,25 @@ ros2 bag record -a -o sim_recording
 ```
 
 (`-a` records everything; since Jazzy this writes an `.mcap` file inside the
-`sim_recording` directory. Humble users need the `rosbag2_storage_mcap`
-plugin: `sudo apt install ros-humble-rosbag2-storage-mcap`.)
+`sim_recording` directory — see the note below for Humble / pre-Jazzy bags.)
 
 Then:
 
 ```bash
 cargo run --release -- path/to/sim_recording/sim_recording_0.mcap
 ```
+
+> **Pre-Jazzy bags (sqlite3 format)** — intentionally not supported. ros2 bags
+> recorded before Jazzy used the sqlite3 storage plugin by default, and
+> rosfilter reads **MCAP only**. Convert legacy bags (or record with MCAP):
+>
+> ```bash
+> ros2 bag convert --input <old_bag> --storage mcap
+> ros2 bag record -a --storage mcap -o sim_recording   # Jazzy/Humble with plugin
+> ```
+>
+> (Humble users also need the plugin: `sudo apt install
+> ros-humble-rosbag2-storage-mcap`.)
 
 What you can do in the app:
 
@@ -105,8 +116,13 @@ multi-arrays — with a dotted **field path** selecting the channel
 
 ### 1. Install ROS 2 + the rclrs build prerequisites
 
-Tested against **Jazzy** (recommended LTS) and **Humble**; `rclrs` 0.7
-supports both (plus newer distros). Install ROS 2 per the official docs, then:
+**Canonical target: ROS 2 Jazzy Jalisco** (LTS until 2029). `rclrs` 0.7 also
+builds against Humble and newer distros, but Jazzy is the pinned, tested
+default. If a specific distro misbehaves with crates.io `rclrs = "0.7"`,
+pin the git dependency instead: `rclrs = { git =
+"https://github.com/ros2-rust/ros2_rust" }` (see the ros2-rust docs).
+
+Install ROS 2 Jazzy per the official docs, then:
 
 ```bash
 sudo apt install -y git libclang-dev python3-pip
@@ -118,7 +134,7 @@ sudo apt install -y ros-$ROS_DISTRO-example-interfaces ros-$ROS_DISTRO-test-msgs
 ### 2. Build with the `ros2` feature
 
 ```bash
-source /opt/ros/jazzy/setup.bash    # your distro
+source /opt/ros/jazzy/setup.bash
 cargo build --release --features ros2
 ```
 
@@ -129,7 +145,7 @@ workspace or generated message crates needed. (The repo also ships a
 ### 3. Use it
 
 ```bash
-ros2 run wpifilter wpifilter     # or: target/release/wpifilter
+ros2 run rosfilter rosfilter     # or: target/release/rosfilter
 ```
 
 - Enter your `ROS_DOMAIN_ID` (default 0).
@@ -192,13 +208,12 @@ colcon-ros-cargo`, then `colcon build` inside a workspace with the repo in
 
 ## Roadmap / open questions
 
-- **rclrs distro pinning**: crates.io `rclrs = "0.7"` tracks the ros2-rust
-  mainline and supports Humble/Jazzy/newer via the generated bindings. If you
-  hit a version mismatch on a specific distro, pin the git dependency
-  (`rclrs = { git = "https://github.com/ros2-rust/ros2_rust" }`) — see the
-  ros2-rust docs.
-- **`rosbag2` (sqlite3) bags**: the old default storage format (pre-Jazzy) is
-  not read yet — migrate with `ros2 bag convert` or point MCAP at them.
+- **Distro support**: **Jazzy is the canonical, pinned target** (see Live ROS 2
+  topics above). Other distros work via the `rclrs = { git = … }` fallback.
+- **Pre-Jazzy `rosbag2` (sqlite3) bags**: **DECIDED — intentionally
+  unsupported.** rosfilter reads MCAP only; convert legacy bags with
+  `ros2 bag convert --input <old_bag> --storage mcap` (see the note in
+  "Quick start").
 - **More offline message types**: extend `decode_message` in
   `rosbag_loader.rs`. The live path already handles any type via dynamic
   messages.

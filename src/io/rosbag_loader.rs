@@ -33,6 +33,10 @@ pub enum RosbagError {
     Mcap(String),
     /// A message used an encoding we don't understand (expected `"cdr"`).
     UnsupportedEncoding { topic: String, encoding: String },
+    /// The file does not start with the MCAP magic — likely a legacy
+    /// sqlite3-format bag, or the bag *directory* rather than the `.mcap`
+    /// file inside it.
+    NotMcap(String),
 }
 
 impl std::fmt::Display for RosbagError {
@@ -43,6 +47,12 @@ impl std::fmt::Display for RosbagError {
             RosbagError::UnsupportedEncoding { topic, encoding } => {
                 write!(f, "topic '{topic}' uses message encoding '{encoding}', expected 'cdr'")
             }
+            RosbagError::NotMcap(path) => write!(
+                f,
+                "'{path}' is not an MCAP file — rosfilter reads rosbag2/MCAP only. \
+                 Convert legacy sqlite3 bags with `ros2 bag convert --input <bag> --storage mcap`, \
+                 or open the .mcap file inside the bag directory"
+            ),
         }
     }
 }
@@ -67,6 +77,15 @@ pub struct LoadStats {
 /// one channel per extracted field (e.g. `/imu/data · linear_acceleration.z`).
 pub fn load(path: &Path) -> Result<(LogFile, LoadStats), RosbagError> {
     let buf = std::fs::read(path).map_err(RosbagError::Io)?;
+
+    // Friendly early check: an MCAP file starts with its 8-byte magic.
+    // Anything else is either not a bag, a legacy sqlite3-format bag, or the
+    // bag *directory* — all worth a clear message rather than a parse error.
+    const MCAP_MAGIC: [u8; 8] = [0x89, b'M', b'C', b'A', b'P', b'0', b'\r', b'\n'];
+    if buf.len() < MCAP_MAGIC.len() || !buf.starts_with(&MCAP_MAGIC) {
+        return Err(RosbagError::NotMcap(path.display().to_string()));
+    }
+
     let mut stats = LoadStats::default();
     let mut seen_unsupported: Vec<(String, String)> = Vec::new();
 
