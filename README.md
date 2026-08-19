@@ -1,7 +1,5 @@
 # rosfilter — ROS 2 filter workbench
 
-![rosfilter](image.png)
-
 A desktop filter design + analysis workbench for **ROS 2** signal data — built
 for both **simulation** (Gazebo rosbags) and **real robots** (live topics).
 
