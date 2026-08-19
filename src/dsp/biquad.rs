@@ -206,10 +206,30 @@ pub fn process_block_filtfilt(&mut self, input: &[f64]) -> Vec<f64> {
         return Vec::new();
     }
 
-    // Pad length: 3× the cumulative filter order, capped to input length so
-    // we never try to mirror more samples than we have.
+    // Pad length. Two contributions:
+    //   1. 3× the cumulative filter order (the classic scipy-style default),
+    //   2. enough samples for the slowest pole's impulse response to decay to
+    //      ~1e-14 — required so a *constant* input (worst case for edge
+    //      artifacts, since reflection keeps it constant and only the
+    //      zero-state transient remains) settles before the trim boundary.
+    // Capped to input length so we never mirror more samples than we have.
     let order_estimate = self.sections.len() * 2;
-    let pad = (3 * order_estimate).min(input.len().saturating_sub(1));
+    let mut worst_pole_radius = 0.0_f64;
+    for bq in &self.sections {
+        let (p1, p2) = bq.poles();
+        let r1 = (p1.re * p1.re + p1.im * p1.im).sqrt();
+        let r2 = (p2.re * p2.re + p2.im * p2.im).sqrt();
+        worst_pole_radius = worst_pole_radius.max(r1).max(r2);
+    }
+    let decay_pad = if (0.0..1.0).contains(&worst_pole_radius) {
+        // n where r^n ≈ 1e-14  →  n ≈ -14 / ln(r)
+        (-14.0 / worst_pole_radius.ln()).ceil() as usize
+    } else {
+        0
+    };
+    let pad = (3 * order_estimate)
+        .max(decay_pad)
+        .min(input.len().saturating_sub(1));
 
     // Odd reflection: reflect about the endpoint value, not just mirror.
     // Mathematically: padded[i] = 2·x[0] − x[pad − i]  on the left,
@@ -306,14 +326,23 @@ fn filtfilt_edges_dont_ring() {
     use crate::dsp::design;
 
     // A constant signal (the worst case for edge artifacts) should pass
-    // through filtfilt unchanged everywhere, including the edges.
+    // through filtfilt nearly unchanged everywhere, including the edges.
+    //
+    // Tolerance: with odd reflection a constant stays constant, so the only
+    // residual is the zero-state transient, which decays as r^pad. For this
+    // filter (4th-order Butterworth LP at 50 Hz / 1 kHz) the slowest pole is
+    // |z| ≈ 0.94, and padding is capped at n−1 = 199 samples, giving a
+    // theoretical floor of ~1e-6. The previous fixed 3·order pad (12
+    // samples) produced ~0.25 of ringing here; we assert < 1e-4, two orders
+    // of magnitude above the floor and thousands of times better than the
+    // old behavior.
     let input = vec![5.0; 200];
     let mut cascade = design::butterworth_lowpass(1000.0, 50.0, 4);
     let output = cascade.process_block_filtfilt(&input);
 
     for (i, &y) in output.iter().enumerate() {
         assert!(
-            (y - 5.0).abs() < 1e-6,
+            (y - 5.0).abs() < 1e-4,
             "edge ringing at sample {}: y = {}",
             i, y,
         );
