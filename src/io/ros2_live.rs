@@ -141,7 +141,7 @@ impl Ros2LiveClient {
                 .map_err(|e| e.to_string())?;
             let executor = context.create_basic_executor();
             let node = executor
-                .create_node("wpifilter_discovery")
+                .create_node("rosfilter_discovery")
                 .map_err(|e| e.to_string())?;
             // Give DDS a moment to gather endpoint info before querying.
             thread::sleep(Duration::from_millis(200));
@@ -196,7 +196,7 @@ fn run_network_thread(
         }
     };
     let mut executor = context.create_basic_executor();
-    let node = match executor.create_node("wpifilter_live") {
+    let node = match executor.create_node("rosfilter_live") {
         Ok(n) => n,
         Err(e) => {
             let _ = status_tx.send(LiveStatus::Error(format!("create node: {e}")));

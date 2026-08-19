@@ -378,7 +378,7 @@ mod tests {
             writer.finish().expect("finish");
         }
         let tmp_id = NEXT_TMP_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let dir = std::env::temp_dir().join("wpifilter_test_bags");
+        let dir = std::env::temp_dir().join("rosfilter_test_bags");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(format!("roundtrip_{}_{tmp_id}.mcap", std::process::id()));
         std::fs::write(&path, buf.into_inner()).unwrap();

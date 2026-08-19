@@ -18,7 +18,7 @@ enum ViewMode {
     Live,
 }
 
-pub struct WpiFilterApp {
+pub struct RosFilterApp {
     log:           Option<LogFile>,
     view_mode:     ViewMode,
 
@@ -35,7 +35,7 @@ pub struct WpiFilterApp {
     live_snapshot: Option<LogFile>,
 }
 
-impl WpiFilterApp {
+impl RosFilterApp {
     pub fn new(log: Option<LogFile>) -> Self {
         Self {
             log,
@@ -51,11 +51,11 @@ impl WpiFilterApp {
     }
 }
 
-impl Default for WpiFilterApp {
+impl Default for RosFilterApp {
     fn default() -> Self { Self::new(None) }
 }
 
-impl eframe::App for WpiFilterApp {
+impl eframe::App for RosFilterApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Live mode needs continuous repaints; the rclrs thread doesn't wake
         // egui on its own. Request_repaint at ~60Hz keeps the plots scrolling.
@@ -65,7 +65,7 @@ impl eframe::App for WpiFilterApp {
 
         egui::TopBottomPanel::top("topbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.heading("wpifilter — ROS 2 filter workbench");
+                ui.heading("rosfilter — ROS 2 filter workbench");
                 ui.separator();
                 ui.selectable_value(&mut self.view_mode, ViewMode::Signal, "Signal view");
                 ui.selectable_value(&mut self.view_mode, ViewMode::Graph,  "Graph view");
@@ -109,7 +109,7 @@ impl eframe::App for WpiFilterApp {
     }
 }
 
-impl WpiFilterApp {
+impl RosFilterApp {
     fn signal_mode_ui(&mut self, ctx: &egui::Context) {
         let fs = self.log.as_ref().and_then(|l| self.signal_view.estimated_sample_rate(l));
 

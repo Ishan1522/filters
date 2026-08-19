@@ -8,16 +8,16 @@ use std::path::PathBuf;
 
 fn main() {
     // Optional positional arg: a rosbag2 (MCAP) file, e.g.
-    //   wpifilter sim_recording.mcap
+    //   rosfilter sim_recording.mcap
     let path: Option<PathBuf> = std::env::args_os().nth(1).map(PathBuf::from);
 
     let log = path.as_deref().and_then(load_bag);
 
     let options = eframe::NativeOptions::default();
     eframe::run_native(
-        "wpifilter — ROS 2 filter workbench",
+        "rosfilter — ROS 2 filter workbench",
         options,
-        Box::new(|_cc| Ok(Box::new(ui::app::WpiFilterApp::new(log)))),
+        Box::new(|_cc| Ok(Box::new(ui::app::RosFilterApp::new(log)))),
     )
     .unwrap();
 }

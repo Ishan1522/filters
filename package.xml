@@ -8,7 +8,7 @@
   message crates required). See README "Live ROS 2 topics".
 -->
 <package format="3">
-  <name>wpifilter</name>
+  <name>rosfilter</name>
   <version>0.2.0</version>
   <description>ROS 2 filter workbench — analyze rosbag recordings (MCAP) and live ROS 2 topics, design filters, export them as ROS 2 nodes</description>
   <maintainer email="github@example.invalid">Ishan1522</maintainer>

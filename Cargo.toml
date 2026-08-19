@@ -1,5 +1,5 @@
 [package]
-name = "wpifilter"
+name = "rosfilter"
 version = "0.2.0"
 edition = "2024"
 description = "ROS 2 filter workbench — analyze rosbag recordings (MCAP) and live ROS 2 topics, design filters, export them as ROS 2 nodes"

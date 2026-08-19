@@ -3017,6 +3017,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
+name = "rosfilter"
+version = "0.2.0"
+dependencies = [
+ "crossbeam-channel",
+ "eframe",
+ "egui",
+ "egui_plot",
+ "mcap",
+ "nalgebra",
+ "rclrs",
+ "rustfft",
+ "slotmap",
+]
+
+[[package]]
 name = "rosidl_runtime_rs"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4551,21 +4566,6 @@ dependencies = [
  "serde_json",
  "unicode-xid",
  "wasmparser",
-]
-
-[[package]]
-name = "wpifilter"
-version = "0.2.0"
-dependencies = [
- "crossbeam-channel",
- "eframe",
- "egui",
- "egui_plot",
- "mcap",
- "nalgebra",
- "rclrs",
- "rustfft",
- "slotmap",
 ]
 
 [[package]]
