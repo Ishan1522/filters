@@ -29,8 +29,8 @@ use crate::io::live_store::LiveStore;
 
 #[cfg(feature = "ros2")]
 use rclrs::{
-    Context, DynamicMessage, InitOptions, MessageInfo, MessageTypeName, QOS_PROFILE_SENSOR_DATA,
-    SequenceValue, SimpleValue, SpinOptions, Value,
+    Context, CreateBasicExecutor, DynamicMessage, InitOptions, IntoPrimitiveOptions, MessageInfo,
+    MessageTypeName, QOS_PROFILE_SENSOR_DATA, SequenceValue, SimpleValue, SpinOptions, Value,
 };
 
 /// Status messages from the live thread to the UI.
@@ -222,7 +222,7 @@ fn run_network_thread(
 
     let _ = status_tx.send(LiveStatus::Connected);
     while !stop.load(Ordering::Relaxed) {
-        let errors = executor.spin(SpinOptions::timeout(Duration::from_millis(200)));
+        let errors = executor.spin(SpinOptions::default().timeout(Duration::from_millis(200)));
         if !errors.is_empty() {
             let _ = status_tx.send(LiveStatus::Error(format!(
                 "executor: {}",
@@ -270,7 +270,8 @@ fn subscribe_one(
 fn extract_path(msg: &DynamicMessage, path: &[PathSegment]) -> Option<f64> {
     if path.is_empty() {
         // Scalar message (e.g. Float64 / Bool): the value is the whole message.
-        return scalar_to_f64(msg.view().iter().next()?.1);
+        let (_, v) = msg.view().iter().next()?;
+        return scalar_to_f64(&v);
     }
 
     let mut current: Option<Value<'_>> = None;
@@ -310,18 +311,21 @@ fn scalar_to_f64(v: &Value<'_>) -> Option<f64> {
     let Value::Simple(s) = v else {
         return None;
     };
+    // NOTE: the immutable SimpleValue variants hold *references* to the
+    // underlying scalars (`Double(&'msg f64)` etc.) — hence the double
+    // deref below.
     match s {
-        SimpleValue::Double(d) => Some(*d),
-        SimpleValue::Float(f) => Some(*f as f64),
-        SimpleValue::Int8(i) => Some(*i as f64),
-        SimpleValue::Int16(i) => Some(*i as f64),
-        SimpleValue::Int32(i) => Some(*i as f64),
-        SimpleValue::Int64(i) => Some(*i as f64),
-        SimpleValue::Uint8(u) => Some(*u as f64),
-        SimpleValue::Uint16(u) => Some(*u as f64),
-        SimpleValue::Uint32(u) => Some(*u as f64),
-        SimpleValue::Uint64(u) => Some(*u as f64),
-        SimpleValue::Boolean(b) => Some(if *b { 1.0 } else { 0.0 }),
+        SimpleValue::Double(d) => Some(**d),
+        SimpleValue::Float(f) => Some(**f as f64),
+        SimpleValue::Int8(i) => Some(**i as f64),
+        SimpleValue::Int16(i) => Some(**i as f64),
+        SimpleValue::Int32(i) => Some(**i as f64),
+        SimpleValue::Int64(i) => Some(**i as f64),
+        SimpleValue::Uint8(u) => Some(**u as f64),
+        SimpleValue::Uint16(u) => Some(**u as f64),
+        SimpleValue::Uint32(u) => Some(**u as f64),
+        SimpleValue::Uint64(u) => Some(**u as f64),
+        SimpleValue::Boolean(b) => Some(if **b { 1.0 } else { 0.0 }),
         // LongDouble is a raw pointer with platform-dependent width
         // (80-bit x87 on x86) — not representable as f64, skip.
         _ => None,

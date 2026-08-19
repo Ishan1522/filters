@@ -190,7 +190,7 @@ impl LivePanel {
             }
             Some(LiveStatus::Disconnected) => ui.label("○ disconnected"),
             Some(LiveStatus::Error(e)) => {
-                ui.colored_label(egui::Color32::LIGHT_RED, format!("✗ {e}"));
+                ui.colored_label(egui::Color32::LIGHT_RED, format!("✗ {e}"))
             }
             None => ui.label("not started"),
         }

@@ -17,6 +17,3 @@ pub mod rosbag_loader;
 // with the `ros2` cargo feature.
 #[cfg(feature = "ros2")]
 pub mod ros2_live;
-
-#[cfg(feature = "ros2")]
-pub use ros2_live::{LiveStatus, LiveTopicConfig, Ros2LiveClient};
