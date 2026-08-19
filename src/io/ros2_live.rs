@@ -18,7 +18,7 @@
 //! - the UI reads a one-frame [`LogFile`] snapshot each frame and feeds it to
 //!   the exact same signal/graph views used for offline rosbag analysis.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
