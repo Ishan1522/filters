@@ -254,6 +254,10 @@ fn subscribe_one(
     let entry_id = store.announce(cfg.display_name(), cfg.msg_type.clone());
     let store = Arc::clone(store);
     let path = cfg.parse_path();
+    // Owned copies for the closure's diagnostic messages (the closure must
+    // not capture the borrowed `cfg`).
+    let topic_display = cfg.topic.clone();
+    let path_display = cfg.path.clone();
 
     let topic_type = MessageTypeName::try_from(cfg.msg_type.as_str())
         .map_err(|_| format!("invalid message type '{}'", cfg.msg_type))?;
@@ -273,9 +277,9 @@ fn subscribe_one(
                         eprintln!(
                             "live: received msg on {} ({} samples so far) but \
                              field path '{:?}' did not yield a scalar",
-                            cfg.topic,
+                            topic_display,
                             store.stats().1,
-                            cfg.path,
+                            path_display,
                         );
                     }
                 }
