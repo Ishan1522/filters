@@ -29,9 +29,8 @@ use crate::io::live_store::LiveStore;
 
 #[cfg(feature = "ros2")]
 use rclrs::{
-    Context, CreateBasicExecutor, DynamicMessage, ExecutorCommands, InitOptions,
-    IntoPrimitiveOptions, MessageInfo, MessageTypeName, QOS_PROFILE_SENSOR_DATA, SequenceValue,
-    SimpleValue, SpinOptions, Value,
+    Context, CreateBasicExecutor, DynamicMessage, ExecutorCommands, InitOptions, MessageInfo,
+    MessageTypeName, SequenceValue, SimpleValue, SpinOptions, Value,
 };
 
 /// Status messages from the live thread to the UI.
@@ -269,9 +268,14 @@ fn subscribe_one(
     // spin — verified by CI: a typed subscription on the same topic receives
     // data, the node-scoped dynamic one receives nothing. The worker-scoped
     // path calls the callback synchronously.
+    //
+    // QoS: DEFAULT (reliable). CI proved that QOS_PROFILE_SENSOR_DATA
+    // (best-effort) matched NO data against the fixture's reliable
+    // publisher, while the default reliable profile delivered — a filter
+    // workbench wants every sample anyway.
     worker.create_dynamic_subscription(
         topic_type,
-        cfg.topic.as_str().qos(QOS_PROFILE_SENSOR_DATA),
+        cfg.topic.as_str(),
         move |_payload: &mut (), msg: DynamicMessage, info: MessageInfo| {
             match extract_path(&msg, &path) {
                 Some(v) => store.push(entry_id, timestamp_us(&info), v),
