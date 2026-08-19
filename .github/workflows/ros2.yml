@@ -56,7 +56,7 @@ jobs:
       #    setup exactly and lets us install the exact extra packages) ──
       - name: Install ROS 2 Jazzy (ros-base + rclrs/dynamic-message deps)
         run: |
-          set -euxo pipefail
+          set -eo pipefail
           # Add the ROS 2 apt repository (packages.ros.org).
           sudo apt-get install -y software-properties-common curl
           sudo add-apt-repository universe -y
@@ -104,7 +104,7 @@ jobs:
       # ── Real-bag smoke test: record with real ros2 tooling, load it ──
       - name: Publish fixture topics + record a real rosbag2 (MCAP)
         run: |
-          set -euxo pipefail
+          set -eo pipefail
           source /opt/ros/jazzy/setup.bash
           # Self-contained: the publisher only needs to live for this step
           # (GitHub Actions reaps background processes between steps).
@@ -137,7 +137,7 @@ jobs:
       # ── Live smoke test: rclrs subscription receives real published data ──
       - name: Smoke test — live rclrs subscription receives data
         run: |
-          set -euxo pipefail
+          set -eo pipefail
           source /opt/ros/jazzy/setup.bash
           # Self-contained publisher (see note above about step reaping).
           nohup python3 ci/publish_fixture.py > /tmp/fixture_live_pub.log 2>&1 &
