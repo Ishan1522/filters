@@ -428,7 +428,29 @@ mod tests {
     #[test]
     #[ignore = "requires a live ROS 2 node + publisher; run by CI"]
     fn live_smoke_receives_data() {
+        use rclrs::{Context, InitOptions};
         use std::time::{Duration, Instant};
+
+        // ── Diagnostic: does an rclrs node in THIS process see the
+        //    publisher at all? Graph queries work without spinning, so this
+        //    isolates "rclrs DDS stack broken/isolated" from
+        //    "dynamic subscription delivery broken".
+        let diag_ctx = Context::from_env(InitOptions::new().with_domain_id(Some(0)))
+            .expect("diag context");
+        let diag_executor = diag_ctx.create_basic_executor();
+        let diag_node = diag_executor
+            .create_node("rosfilter_diag")
+            .expect("diag node");
+        std::thread::sleep(Duration::from_secs(3));
+        match diag_node.get_topic_names_and_types() {
+            Ok(topics) => {
+                eprintln!("live smoke: rclrs discovery sees {} topic(s)", topics.len());
+                for (t, types) in &topics {
+                    eprintln!("live smoke:   {t} ({types:?})");
+                }
+            }
+            Err(e) => eprintln!("live smoke: discovery query failed: {e}"),
+        }
 
         let client = Ros2LiveClient::connect(
             Some(0),
