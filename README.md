@@ -183,6 +183,28 @@ loader path — no ROS 2 runtime needed.
 
 ---
 
+## CI / Verification (GitHub Actions)
+
+`.github/workflows/ros2.yml` provisions a **real ROS 2 Jazzy** environment
+(Ubuntu 24.04, the canonical target) to verify the parts a plain dev box
+can't — the rclrs live code and real `ros2 bag record` output:
+
+| Job | Checks |
+|-----|--------|
+| **core** | `cargo build` + `cargo test` on default features (no ROS 2; includes the MCAP round-trip) |
+| **ros2** | `cargo build --features ros2` compiles `ros2_live.rs` against **real rclrs 0.7 from crates.io**; `cargo test --features ros2`; a **real bag** is recorded (`ci/publish_fixture.py` publishes Float64/Imu/Twist topics, `ros2 bag record --storage mcap` captures them) and loaded through `rosbag_loader` asserting channels + decoded message counts; a **live smoke test** subscribes via rclrs and asserts the ring buffer actually receives published data |
+
+The workflow explicitly verifies and reports the message-typesupport
+libraries (`rosidl-dynamic-typesupport` package plus the introspection
+typesupport `.so`s that rclrs dynamic messages dlopen at runtime). DDS is
+confined to loopback (`ROS_LOCALHOST_ONLY=1`) so the in-CI
+publisher↔subscriber pair discovers each other reliably.
+
+Trigger it manually with **Actions → ros2 → Run workflow**, or it runs on
+every PR / push to the migration branch.
+
+---
+
 ## Repository layout
 
 ```
