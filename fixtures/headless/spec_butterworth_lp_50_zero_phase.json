@@ -1,0 +1,9 @@
+{
+  "name": "elbow torque LP 50 Hz (zero-phase)",
+  "kind": "ButterworthLowpass",
+  "cutoff_hz": 50.0,
+  "q": null,
+  "order": 4,
+  "ripple_db": null,
+  "zero_phase": true
+}

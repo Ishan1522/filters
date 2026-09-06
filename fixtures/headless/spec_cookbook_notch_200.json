@@ -1,0 +1,9 @@
+{
+  "name": "notch 200 Hz hum",
+  "kind": "CookbookNotch",
+  "cutoff_hz": 200.0,
+  "q": 10.0,
+  "order": null,
+  "ripple_db": null,
+  "zero_phase": false
+}

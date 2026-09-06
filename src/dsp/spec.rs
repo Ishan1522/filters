@@ -1,7 +1,10 @@
 use crate::dsp::biquad::BiquadCascade;
 use crate::dsp::design;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The filter kinds the design engine can build. `serde::Deserialize` lets the
+/// headless CLI (`rosfilter headless --spec`) accept these exact enum names as
+/// JSON strings (`"CookbookLowpass"`, `"ButterworthLowpass"`, …).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 pub enum FilterKind {
     /// RBJ cookbook lowpass — single biquad, Q is user-controlled.
     CookbookLowpass,

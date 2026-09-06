@@ -168,6 +168,100 @@ ros2 run rosfilter rosfilter     # or: target/release/rosfilter
 
 ---
 
+## Headless mode (batch / executor CLI)
+
+`rosfilter headless` runs the **real** biquad cascade over a recorded signal
+with no GUI — designed as the "executor" half of a two-sided filter system
+(a browser dashboard designs filters with a scipy preview, then shells out to
+this binary to get the authoritative Rust DSP output, closing the
+design-vs-executor fidelity gate).
+
+```bash
+rosfilter headless --spec filter.json --input signal.jsonl --output filtered.jsonl
+```
+
+The output is exactly what the app produces: the input is resampled onto its
+natural-rate uniform grid with the same helpers the node-graph evaluator uses,
+then run through `pipeline::nodes::apply_filter` — the same function a Filter
+node in the graph dispatches to. No second DSP implementation.
+
+### Filter spec (`--spec`)
+
+JSON mirroring `dsp::spec::FilterSpec`, as the dashboard exports it:
+
+```json
+{
+  "name": "elbow torque LP 50 Hz",
+  "kind": "ButterworthLowpass",
+  "cutoff_hz": 50.0,
+  "q": null,
+  "order": 4,
+  "ripple_db": null,
+  "zero_phase": false
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `name` | optional display name (echoed on stderr) |
+| `kind` | **required** — one of `CookbookLowpass`, `CookbookHighpass`, `CookbookBandpass`, `CookbookNotch`, `ButterworthLowpass`, `Chebyshev1Lowpass` (exact enum names) |
+| `cutoff_hz` | **required** — finite, > 0 |
+| `q` / `order` / `ripple_db` | optional; `null` when a kind doesn't use them (falls back to the GUI defaults: q ≈ 0.7071, order 4, ripple 1 dB). Used per kind exactly as the GUI does |
+| `zero_phase` | optional bool, default `false` = causal single pass. `true` = zero-phase filtfilt (offline-only, like the GUI preview) |
+
+Deserialization is lenient about nulls/missing optional params but **refuses
+loudly** (exit 1, message on stderr) on unknown `kind` values and unknown
+JSON fields.
+
+### Signal input (`--input`)
+
+| Format | Rows | Selector |
+|--------|------|----------|
+| Dashboard trial JSONL | `{"t": <s>, "metric": "joint_torques", "joint": <name\|idx>, "torque": <Nm>}` | `--joint <name\|idx>` (defaults to the file's only joint; ambiguous files list the joints) |
+| Bare series JSONL | `{"t": <s>, "value": <x>}` | — |
+| rosbag2 / MCAP (`rosbag` feature) | anything `rosbag_loader` decodes (Float64, Imu, JointState, …) | `--topic <channel>` — a scalar topic (`/ci/vel`) or a `"topic · field"` channel as listed by `--list-channels` (e.g. `/imu/data · linear_acceleration.z`) |
+
+The sample rate is estimated from the timestamps (median inter-sample
+interval) and the series is filtered on that natural uniform grid — the same
+thing the GUI does before filtering, so headless output and GUI preview agree.
+A `--topic`/`--joint` that matches nothing lists what *is* available.
+
+### Output (`--output`)
+
+Filtered samples, one per uniform-grid row:
+
+```jsonl
+{"t": 0.0, "value": -0.0003}
+{"t": 0.001, "value": 0.0197}
+```
+
+`t` is seconds on the input's time axis; `value` is the causal (or, with
+`--zero-phase` / `zero_phase: true`, the filtfilt) cascade output. Non-finite
+filter output is treated as an error and nothing is written.
+
+### Flags, exit codes
+
+```
+rosfilter headless --spec <json> --input <signal> --output <jsonl>
+                   [--joint <name|idx>] [--topic <channel>|--channel <channel>]
+                   [--zero-phase] [--list-channels]
+```
+
+- `--zero-phase` overrides the spec's `zero_phase` field (offline-only
+  filtfilt); without it the spec field is honored (default = causal, matching
+  the exported ROS 2 node).
+- `--list-channels` prints an MCAP's loadable channels and exits (no spec or
+  output needed).
+- Exit codes: `0` ok · `1` runtime error (bad spec/input, missing channel,
+  non-finite output) · `2` usage error. `--version` / `--help` exist on both
+  the root binary and the subcommand.
+
+Example fixtures live in [`fixtures/headless/`](fixtures/headless/) (spec
+files + a two-joint 1 kHz trial), exercised end-to-end by
+`tests/headless_cli.rs`, which spawns the real binary.
+
+---
+
 ## Tests
 
 ```bash
@@ -214,9 +308,12 @@ src/
 │   ├── live_store.rs     # thread-safe ring buffer (live topics)
 │   └── ros2_live.rs      # [ros2] rclrs live subscription client (dynamic messages)
 ├── dsp/                  # biquad, filter design (RBJ/Butterworth/Chebyshev), ROS 2 export
+├── headless.rs           # batch/executor CLI (`rosfilter headless`), no GUI
 ├── pipeline/             # node-graph dataflow engine (offline analysis)
 ├── analysis/             # FFT, resampling, sample-rate estimation
 └── ui/                   # Signal / Graph / Live (ROS topics) views
+fixtures/headless/        # filter-spec JSON + trial JSONL used by the headless tests
+tests/headless_cli.rs     # end-to-end tests that spawn the real binary headless
 ```
 
 `package.xml` declares the colcon `cargo` build type so the repo can also be
