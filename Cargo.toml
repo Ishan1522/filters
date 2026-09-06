@@ -43,3 +43,14 @@ libloading   = { version = "0.8", optional = true }
 
 # Cross-thread communication (live client thread ↔ UI thread)
 crossbeam-channel = "0.5"
+
+# Headless / batch mode (`rosfilter headless`): filter-spec JSON parsing and
+# JSONL output. serde derive is also used by dsp::spec (FilterKind JSON names).
+serde       = { version = "1.0", features = ["derive"] }
+serde_json  = "1.0"
+
+[dev-dependencies]
+# Integration tests spawn the real binary and parse its JSONL output; `mcap`
+# lets them write a tiny in-memory bag to exercise the MCAP input path.
+serde_json  = "1.0"
+mcap        = "0.25"
