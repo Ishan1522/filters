@@ -10,9 +10,11 @@
 //! - `std_msgs/msg/Float64`, `Float32`, `Int64`, `Int32`, `Bool`
 //! - `std_msgs/msg/Float64MultiArray` (one channel per element, capped)
 //! - `sensor_msgs/msg/Imu`
-//! - `sensor_msgs/msg/JointState` (position per joint)
+//! - `sensor_msgs/msg/JointState` (position and/or effort per joint — a
+//!   producer may populate either array and leave the other empty)
 //! - `nav_msgs/msg/Odometry`
-//! - `geometry_msgs/msg/Twist`, `TwistStamped`, `Vector3`, `PointStamped`
+//! - `geometry_msgs/msg/Twist`, `TwistStamped`, `Vector3`, `PointStamped`,
+//!   `PoseStamped`, `WrenchStamped`
 //!
 //! Timestamps are taken from the MCAP `log_time` (nanoseconds), converted to
 //! microseconds to match the rest of the toolchain.
@@ -211,6 +213,29 @@ fn decode_message(type_name: &str, data: &[u8]) -> Option<Vec<(String, f64)>> {
                 ("point.z".to_string(), r.read_f64()?),
             ]
         }
+        "geometry_msgs/msg/PoseStamped" => {
+            skip_header(&mut r)?;
+            vec![
+                ("pose.position.x".to_string(), r.read_f64()?),
+                ("pose.position.y".to_string(), r.read_f64()?),
+                ("pose.position.z".to_string(), r.read_f64()?),
+                ("pose.orientation.x".to_string(), r.read_f64()?),
+                ("pose.orientation.y".to_string(), r.read_f64()?),
+                ("pose.orientation.z".to_string(), r.read_f64()?),
+                ("pose.orientation.w".to_string(), r.read_f64()?),
+            ]
+        }
+        "geometry_msgs/msg/WrenchStamped" => {
+            skip_header(&mut r)?;
+            vec![
+                ("wrench.force.x".to_string(), r.read_f64()?),
+                ("wrench.force.y".to_string(), r.read_f64()?),
+                ("wrench.force.z".to_string(), r.read_f64()?),
+                ("wrench.torque.x".to_string(), r.read_f64()?),
+                ("wrench.torque.y".to_string(), r.read_f64()?),
+                ("wrench.torque.z".to_string(), r.read_f64()?),
+            ]
+        }
 
         _ => return None,
     };
@@ -315,14 +340,29 @@ fn decode_joint_state(r: &mut CdrReader) -> Option<Vec<(String, f64)>> {
     r.read_string_seq(&mut names)?;
     let mut positions = Vec::new();
     r.read_f64_seq(&mut positions)?;
-    // velocity / effort follow — not extracted.
-    Some(
-        names
-            .iter()
-            .zip(positions.iter())
-            .map(|(n, &p)| (format!("position[{n}]"), p))
-            .collect(),
-    )
+    // `velocity` is skipped, not extracted. It still has to be consumed so the
+    // cursor lands on `effort`; read into a throwaway rather than bind a vec
+    // that nothing reads.
+    r.read_f64_seq(&mut Vec::new())?;
+    let mut efforts = Vec::new();
+    r.read_f64_seq(&mut efforts)?;
+
+    // JointState serialises name/position/velocity/effort and a producer may
+    // populate any subset, leaving the rest empty. In particular
+    // `sim_infra/analysis/convert_to_mcap.py` writes our /joint_torques with an
+    // EMPTY `position` and the torques in `effort` — so zipping against
+    // `position` alone yields zero channels for those bags. Emit whichever
+    // arrays carry data, indexing into `names` by element position.
+    let mut out = Vec::new();
+    for (i, name) in names.iter().enumerate() {
+        if let Some(&p) = positions.get(i) {
+            out.push((format!("position[{name}]"), p));
+        }
+        if let Some(&e) = efforts.get(i) {
+            out.push((format!("effort[{name}]"), e));
+        }
+    }
+    Some(out)
 }
 
 fn decode_multi_array(r: &mut CdrReader) -> Option<Vec<(String, f64)>> {
@@ -472,6 +512,42 @@ mod tests {
         assert_eq!(samples[0].timestamp_us, 1_234_567_890);
         match samples[0].value {
             SampleValue::Double(v) => assert!((v - 9.81).abs() < 1e-12),
+            _ => panic!("expected double"),
+        }
+    }
+
+    #[test]
+    fn joint_state_effort_only_bag_yields_effort_channels() {
+        // The exact shape `sim_infra/analysis/convert_to_mcap.py` writes for
+        // /joint_torques: an EMPTY `position` array with the torques in
+        // `effort`. Zipping against `position` alone produced zero channels —
+        // this test locks that decoder gap shut.
+        let mut w = CdrWriter::new();
+        w.u32(1); // stamp.sec
+        w.u32(2); // stamp.nanosec
+        w.string("base_link"); // frame_id
+        w.u32(2); // name[] count
+        w.string("FL_roll");
+        w.string("FL_pitch");
+        w.f64_seq(&[]); // position — not logged
+        w.f64_seq(&[]); // velocity — not logged
+        w.f64_seq(&[1.5, -2.25]); // effort — the torques
+        let payload = w.buf;
+
+        let log = write_roundtrip_mcap(
+            &[("/joint_torques", "sensor_msgs/msg/JointState", payload)],
+            &[1_000_000_000],
+        );
+
+        // Only `effort` is populated: two channels, and no `position` ones.
+        assert_eq!(log.channels.len(), 2);
+        assert_eq!(log.channels[0].name, "/joint_torques · effort[FL_roll]");
+        assert_eq!(log.channels[1].name, "/joint_torques · effort[FL_pitch]");
+
+        let samples = &log.data[&log.channels[0].entry_id];
+        assert_eq!(samples.len(), 1);
+        match samples[0].value {
+            SampleValue::Double(v) => assert!((v - 1.5).abs() < 1e-12),
             _ => panic!("expected double"),
         }
     }
