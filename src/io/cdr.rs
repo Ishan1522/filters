@@ -10,8 +10,10 @@
 //! - Primitive fields are aligned to their own size **relative to the start of
 //!   the message payload** — the same rule FastCDR, CycloneDDS, and
 //!   ros2-rust's `cdr` crate all use in practice.
-//! - `string` = `uint32 length` + bytes + NUL terminator (the NUL is not
-//!   counted in `length`).
+//! - `string` = `uint32 length` + bytes, where `length` **includes** the NUL
+//!   terminator (so the text is `length - 1` bytes followed by the NUL). This
+//!   is XCDR1's rule and what FastCDR/rosbag2 emit. Getting it wrong by one
+//!   byte per string silently desyncs every string-bearing message.
 //! - `sequence<T>` = `uint32 count` + elements, each element aligned to
 //!   `alignof(T)` relative to the message start.
 //! - A DDS CDR encapsulation header (`0x00 0x01` = CDR_LE) may precede the
@@ -115,16 +117,23 @@ impl<'a> CdrReader<'a> {
         Some(f64::from_le_bytes(b))
     }
 
-    /// Read a CDR `string`: uint32 length, bytes, NUL terminator.
+    /// Read a CDR `string`: `uint32 length` (INCLUDING the NUL terminator),
+    /// then `length` bytes of which the last is the NUL.
+    ///
+    /// Length-counts-the-NUL is XCDR1's rule and what FastCDR/rosbag2 emit.
+    /// Reading `length` bytes and then *skipping* a further NUL (the previous
+    /// behaviour) moves the cursor one byte past the end of every string, so any
+    /// message with two strings — or one string followed by another field —
+    /// desyncs and fails to decode entirely. A zero length means the empty
+    /// string (some writers use that form).
     pub fn read_string(&mut self) -> Option<String> {
         let len = self.read_u32()? as usize;
-        let bytes = self.take(len)?;
-        let s = std::str::from_utf8(bytes).ok()?.to_string();
-        // Skip the trailing NUL terminator (not counted in `len`).
-        if self.pos < self.buf.len() {
-            self.pos += 1;
+        if len == 0 {
+            return Some(String::new());
         }
-        Some(s)
+        let bytes = self.take(len)?;
+        // The final byte is the NUL terminator, counted in `len`.
+        Some(std::str::from_utf8(&bytes[..len - 1]).ok()?.to_string())
     }
 
     /// Read a `sequence<float64>`: uint32 count, then count doubles.
@@ -314,7 +323,12 @@ pub(crate) mod test_helpers {
             self.buf.extend_from_slice(&v.to_le_bytes());
         }
         pub fn string(&mut self, s: &str) {
-            self.u32(s.len() as u32);
+            // CDR's length field INCLUDES the NUL terminator. Writing `s.len()`
+            // here (the previous behaviour) made this builder agree with a
+            // reader carrying the same off-by-one, so every unit test passed
+            // while real rosbag2 payloads decoded to zero channels. This must
+            // match what FastCDR emits, not what the reader happens to expect.
+            self.u32(s.len() as u32 + 1);
             self.buf.extend_from_slice(s.as_bytes());
             self.buf.push(0);
         }
