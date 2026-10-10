@@ -565,25 +565,29 @@ mod tests {
     /// decoded to zero channels. Bytes out of an actual bag cannot share the
     /// reader's mistake.
     const REAL_JOINTSTATE_CDR: &str = concat!(
-        "00 01 00 00 ad ba ca 6a a1 23 5d 16 01 00 00 00 00 00 00 00",
-        "0c 00 00 00 0c 00 00 00 46 4c 5f 72 6f 6c 6c 5f 61 63 74 00",
-        "0d 00 00 00 46 4c 5f 70 69 74 63 68 5f 61 63 74 00 00 00 00",
-        "0c 00 00 00 46 4c 5f 6b 6e 65 65 5f 61 63 74 00 0c 00 00 00",
-        "46 52 5f 72 6f 6c 6c 5f 61 63 74 00 0d 00 00 00 46 52 5f 70",
-        "69 74 63 68 5f 61 63 74 00 00 00 00 0c 00 00 00 46 52 5f 6b",
-        "6e 65 65 5f 61 63 74 00 0c 00 00 00 52 4c 5f 72 6f 6c 6c 5f",
-        "61 63 74 00 0d 00 00 00 52 4c 5f 70 69 74 63 68 5f 61 63 74",
-        "00 00 00 00 0c 00 00 00 52 4c 5f 6b 6e 65 65 5f 61 63 74 00",
-        "0c 00 00 00 52 52 5f 72 6f 6c 6c 5f 61 63 74 00 0d 00 00 00",
-        "52 52 5f 70 69 74 63 68 5f 61 63 74 00 00 00 00 0c 00 00 00",
-        "52 52 5f 6b 6e 65 65 5f 61 63 74 00 00 00 00 00 00 00 00 00",
-        "0c 00 00 00 18 fc b3 4e 59 9a bd bf 00 1e 1c bb 10 bf b5 3f",
-        "80 d9 f8 7f 72 11 dc 3f 65 9e 50 18 10 58 bd 3f 00 f9 f9 72",
-        "e2 86 b5 3f 80 44 5e bd 79 aa db 3f a5 64 77 8e 09 ae c8 bf",
-        "00 8f ed de 77 b5 c0 3f 80 5e bd 45 1b ca df 3f 8e 00 47 de",
-        "b1 4b c8 3f 80 17 26 b6 7b b4 c0 3f 00 66 e6 92 c0 80 df 3f",
+        "00 01 00 00 ad ba ca 6a a1 23 5d 16 01 00 00 00 00 00 00 00 ",
+        "0c 00 00 00 0c 00 00 00 46 4c 5f 72 6f 6c 6c 5f 61 63 74 00 ",
+        "0d 00 00 00 46 4c 5f 70 69 74 63 68 5f 61 63 74 00 00 00 00 ",
+        "0c 00 00 00 46 4c 5f 6b 6e 65 65 5f 61 63 74 00 0c 00 00 00 ",
+        "46 52 5f 72 6f 6c 6c 5f 61 63 74 00 0d 00 00 00 46 52 5f 70 ",
+        "69 74 63 68 5f 61 63 74 00 00 00 00 0c 00 00 00 46 52 5f 6b ",
+        "6e 65 65 5f 61 63 74 00 0c 00 00 00 52 4c 5f 72 6f 6c 6c 5f ",
+        "61 63 74 00 0d 00 00 00 52 4c 5f 70 69 74 63 68 5f 61 63 74 ",
+        "00 00 00 00 0c 00 00 00 52 4c 5f 6b 6e 65 65 5f 61 63 74 00 ",
+        "0c 00 00 00 52 52 5f 72 6f 6c 6c 5f 61 63 74 00 0d 00 00 00 ",
+        "52 52 5f 70 69 74 63 68 5f 61 63 74 00 00 00 00 0c 00 00 00 ",
+        "52 52 5f 6b 6e 65 65 5f 61 63 74 00 00 00 00 00 00 00 00 00 ",
+        "0c 00 00 00 18 fc b3 4e 59 9a bd bf 00 1e 1c bb 10 bf b5 3f ",
+        "80 d9 f8 7f 72 11 dc 3f 65 9e 50 18 10 58 bd 3f 00 f9 f9 72 ",
+        "e2 86 b5 3f 80 44 5e bd 79 aa db 3f a5 64 77 8e 09 ae c8 bf ",
+        "00 8f ed de 77 b5 c0 3f 80 5e bd 45 1b ca df 3f 8e 00 47 de ",
+        "b1 4b c8 3f 80 17 26 b6 7b b4 c0 3f 00 66 e6 92 c0 80 df 3f ",
     );
 
+    /// Parse whitespace-separated hex bytes. Each chunk above keeps a trailing
+    /// space: `concat!` joins without a separator, so a chunk missing its
+    /// trailing space would splice the last byte of one line onto the first byte
+    /// of the next (e.g. `…00` + `0c…` -> the token `000c`, which overflows u8).
     fn hex_to_bytes(hex: &str) -> Vec<u8> {
         hex.split_whitespace()
             .map(|b| u8::from_str_radix(b, 16).expect("hex byte"))
